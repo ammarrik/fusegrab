@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld('files', {
         ipcRenderer.invoke('files:choose-save-path', target) as Promise<
             string | null
         >,
+    chooseDirectory: (defaultPath?: string) =>
+        ipcRenderer.invoke('files:choose-directory', defaultPath) as Promise<
+            string | null
+        >,
+    getDefaultDownloadDir: () =>
+        ipcRenderer.invoke('files:get-default-dir') as Promise<string>,
     saveText: (target: unknown, contents: string) =>
         ipcRenderer.invoke('files:save-text', target, contents) as Promise<
             string | null
@@ -39,6 +45,27 @@ contextBridge.exposeInMainWorld('api', {
             ipcRenderer.on('updater:state', handler)
             return () => {
                 ipcRenderer.off('updater:state', handler)
+            }
+        },
+    },
+    youtube: {
+        getInfo: (url: string) => ipcRenderer.invoke('youtube:get-info', url),
+        download: (options: {
+            url: string
+            savePath: string
+            qualityItag?: number
+        }) => ipcRenderer.invoke('youtube:download', options),
+        onProgress: (
+            cb: (progress: {
+                downloadedBytes: number
+                totalBytes: number
+                percent: number
+            }) => void,
+        ) => {
+            const handler = (_: unknown, progress: any) => cb(progress)
+            ipcRenderer.on('youtube:progress', handler)
+            return () => {
+                ipcRenderer.off('youtube:progress', handler)
             }
         },
     },

@@ -1,6 +1,10 @@
 /// <reference types="vite/client" />
 import type { SaveTarget } from '#/lib/services/files/service'
 import type { UpdateState } from '#/lib/services/updater/service'
+import type {
+    DownloadOptions,
+    YoutubeVideoInfo,
+} from '#/lib/services/youtube/service'
 
 declare module 'electron-squirrel-startup' {
     const value: boolean
@@ -18,10 +22,25 @@ declare global {
                 install: () => Promise<boolean>
                 onState: (cb: (state: UpdateState) => void) => () => void
             }
+            youtube: {
+                getInfo: (url: string) => Promise<YoutubeVideoInfo>
+                download: (
+                    options: DownloadOptions,
+                ) => Promise<{ filePath: string; size: number }>
+                onProgress: (
+                    cb: (progress: {
+                        downloadedBytes: number
+                        totalBytes: number
+                        percent: number
+                    }) => void,
+                ) => () => void
+            }
         }
         files: {
             pathForFile: (file: File) => string
             chooseSavePath: (target: SaveTarget) => Promise<string | null>
+            chooseDirectory: (defaultPath?: string) => Promise<string | null>
+            getDefaultDownloadDir: () => Promise<string>
             saveText: (
                 target: SaveTarget,
                 contents: string,

@@ -1,6 +1,7 @@
 import type { HugeiconsIconProps } from '@hugeicons/react'
 
 import {
+    Add01Icon,
     AiMagicIcon,
     Album02Icon,
     ArrowDown01Icon,
@@ -38,6 +39,7 @@ import {
     Robot01Icon,
     ScrollIcon,
     Search01Icon,
+    Sent02Icon,
     Settings01Icon,
     SlidersHorizontalIcon,
     StopIcon,
@@ -56,6 +58,8 @@ function makeIcon(icon: HugeiconsIconProps['icon']): IconComponent {
     return Component
 }
 
+export const Plus = makeIcon(Add01Icon)
+export const Send = makeIcon(Sent02Icon)
 export const ArrowLeft = makeIcon(ArrowLeft01Icon)
 export const ArrowRight = makeIcon(ArrowRight01Icon)
 export const ArrowUp = makeIcon(ArrowUp02Icon)

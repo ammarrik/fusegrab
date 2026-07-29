@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url'
 
 import { toFriendlyError } from './lib/network-error'
 import {
+    chooseDirectory,
     chooseSavePath,
     closeAllWriteStreams,
     closeWriteStream,
+    getDefaultDownloadDir,
     openWriteStream,
     revealInFolder,
     saveTextFile,
@@ -21,6 +23,10 @@ import {
     quitAndInstall,
     setUpdaterWindow,
 } from './lib/services/updater/service'
+import {
+    downloadYoutubeVideo,
+    getYoutubeVideoInfo,
+} from './lib/services/youtube/service'
 
 // electron-squirrel-startup is CommonJS. Importing it with a normal ESM `import`
 // makes Node run its CJS-interop preparse at link time, which crashes the whole
@@ -67,11 +73,10 @@ const windowIcon = app.isPackaged
 const createWindow = () => {
     // Create the browser window.
     const mainWindow = new BrowserWindow({
-        width: 280,
-        height: 420,
-        resizable: false,
-        maximizable: false,
-        fullscreenable: false,
+        width: 1024,
+        height: 768,
+        minWidth: 1024,
+        minHeight: 768,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -194,6 +199,10 @@ handle('window:move-by', (event, dx: number, dy: number) => {
 handle('files:choose-save-path', (event, target) =>
     chooseSavePath(BrowserWindow.fromWebContents(event.sender), target),
 )
+handle('files:choose-directory', (event, defaultPath?: string) =>
+    chooseDirectory(BrowserWindow.fromWebContents(event.sender), defaultPath),
+)
+handle('files:get-default-dir', () => getDefaultDownloadDir())
 handle('files:save-text', (event, target, contents: string) =>
     saveTextFile(BrowserWindow.fromWebContents(event.sender), target, contents),
 )
@@ -215,3 +224,8 @@ handle('updater:check', () => checkForUpdate())
 handle('updater:download', () => downloadUpdate())
 handle('updater:install', () => quitAndInstall())
 handle('app:get-version', () => app.getVersion())
+
+handle('youtube:get-info', (_event, url: string) => getYoutubeVideoInfo(url))
+handle('youtube:download', (event, options) =>
+    downloadYoutubeVideo(BrowserWindow.fromWebContents(event.sender), options),
+)

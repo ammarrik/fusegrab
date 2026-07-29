@@ -40,6 +40,26 @@ export async function chooseSavePath(
     return showSaveDialog(win, target)
 }
 
+export async function chooseDirectory(
+    win: BrowserWindow | null,
+    defaultPath?: string,
+): Promise<string | null> {
+    const options: Electron.OpenDialogOptions = {
+        defaultPath: defaultPath?.trim() || app.getPath('downloads'),
+        properties: ['openDirectory', 'createDirectory'],
+    }
+    const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0)
+        return null
+    return result.filePaths[0]
+}
+
+export function getDefaultDownloadDir(): string {
+    return app.getPath('downloads')
+}
+
 /** Prompts for a location and writes `contents` there. Returns the path, or null if cancelled. */
 export async function saveTextFile(
     win: BrowserWindow | null,
