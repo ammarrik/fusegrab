@@ -408,7 +408,7 @@ export async function checkForUpdate(): Promise<UpdateState> {
         setState({ status: 'checking', error: null })
         const res = await fetch(LATEST_RELEASE_URL, {
             headers: {
-                'User-Agent': 'Fuse-Updater',
+                'User-Agent': 'Fusemass-Updater',
                 Accept: 'application/vnd.github+json',
             },
         })
@@ -513,7 +513,7 @@ export async function downloadUpdate(): Promise<UpdateState> {
         const dest = path.join(dir, asset.name)
 
         const res = await fetch(asset.browser_download_url, {
-            headers: { 'User-Agent': 'Fuse-Updater' },
+            headers: { 'User-Agent': 'Fusemass-Updater' },
         })
         if (!res.ok || !res.body) {
             throw new Error(`Download failed (${res.status})`)

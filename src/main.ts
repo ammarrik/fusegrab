@@ -57,22 +57,6 @@ if (!app.isPackaged) {
     app.commandLine.appendSwitch('disable-http-cache')
 }
 
-// Auto Captions runs Whisper locally through ONNX Runtime's WebAssembly
-// backend, which needs two things Chromium withholds by default:
-//
-//  1. SharedArrayBuffer — required for multi-threaded wasm. Chromium normally
-//     gates it behind cross-origin isolation (COOP/COEP), which a file://
-//     document can't opt into. Without the flag ORT drops to a single thread
-//     and transcription takes several times longer.
-//  2. file:// script loading — the packaged renderer is loaded from a file URL,
-//     whose origin is opaque ("null"), so spawning the transcription Web Worker
-//     is treated as a cross-origin script fetch and blocked. Only our own
-//     bundled pages are ever loaded, so widening this is contained.
-//
-// Both are no-ops in dev, where the renderer is served over http://localhost.
-app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
-app.commandLine.appendSwitch('allow-file-access-from-files')
-
 // Runtime window/taskbar icon. macOS uses the app bundle's .icns, so this is
 // only needed on Windows/Linux. In packaged builds the rounded PNG is shipped
 // via extraResource; in dev it lives under assets/.
@@ -83,10 +67,11 @@ const windowIcon = app.isPackaged
 const createWindow = () => {
     // Create the browser window.
     const mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        minWidth: 1024,
-        minHeight: 768,
+        width: 280,
+        height: 420,
+        resizable: false,
+        maximizable: false,
+        fullscreenable: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -112,13 +97,6 @@ const createWindow = () => {
     })
 
     setUpdaterWindow(mainWindow)
-
-    mainWindow.on('maximize', () => {
-        mainWindow.webContents.send('window:maximized-changed', true)
-    })
-    mainWindow.on('unmaximize', () => {
-        mainWindow.webContents.send('window:maximized-changed', false)
-    })
 
     // Intercept standard target="_blank" links and open in host OS default web browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -203,17 +181,8 @@ function handle(
 handle('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
 })
-handle('window:toggle-maximize', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender)
-    if (!w) return
-    if (w.isMaximized()) w.unmaximize()
-    else w.maximize()
-})
 handle('window:close', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close()
-})
-handle('window:is-maximized', (event) => {
-    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
 })
 handle('window:move-by', (event, dx: number, dy: number) => {
     const win = BrowserWindow.fromWebContents(event.sender)

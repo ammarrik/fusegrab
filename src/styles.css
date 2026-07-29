@@ -39,9 +39,7 @@ body {
     --color-ring: var(--ring);
     --color-danger: var(--danger);
     --color-success: var(--success);
-    --color-sidebar-background: var(--sidebar-background);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar-border: var(--sidebar-border);
+
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -70,9 +68,7 @@ body {
     --danger: oklch(0.577 0.245 27.325);
     --success: oklch(0.596 0.145 163.225);
     --radius: 0.625rem;
-    --sidebar-background: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-border: oklch(0.922 0 0);
+
     /* Scrollbar thumb, tuned per theme so the same rule works in both. */
     --scrollbar-thumb: oklch(0.145 0 0 / 18%);
     --scrollbar-thumb-hover: oklch(0.145 0 0 / 32%);
@@ -93,9 +89,7 @@ body {
     --ring: oklch(0.556 0 0);
     --danger: oklch(0.704 0.191 22.216);
     --success: oklch(0.696 0.17 162.48);
-    --sidebar-background: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+
     --scrollbar-thumb: oklch(1 0 0 / 20%);
     --scrollbar-thumb-hover: oklch(1 0 0 / 34%);
 }
@@ -128,7 +122,8 @@ body {
     [role='button'],
     [role='slider'],
     [role='switch'],
-    [role='tab'] {
+    [role='tab'],
+    [data-no-drag] {
         -webkit-app-region: no-drag;
     }
     html {

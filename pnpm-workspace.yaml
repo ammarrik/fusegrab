@@ -13,12 +13,5 @@ allowBuilds:
     fs-xattr: true
     macos-alias: true
     msw: true
-    # @huggingface/transformers depends on these for its Node build. Auto Captions
-    # only ever uses the web build (onnxruntime-web + WebAssembly) inside the
-    # renderer, so their native install scripts have nothing to do here — and
-    # forge.config.ts keeps all three out of the packaged app.
-    onnxruntime-node: false
-    protobufjs: false
-    sharp: false
     spawn-sync: true
     unrs-resolver: true

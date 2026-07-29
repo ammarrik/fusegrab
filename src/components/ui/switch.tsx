@@ -1,4 +1,4 @@
-import { Switch as Base } from '@base-ui-components/react/switch'
+import { Switch as Base } from '@base-ui/react/switch'
 
 import { cn } from '#/lib/utils'
 

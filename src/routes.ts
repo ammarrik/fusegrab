@@ -11,8 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppLayoutRouteImport } from './routes/_app/layout'
 import { Route as AppRouteRouteImport } from './routes/_app/route'
-import { Route as AppDownloaderRouteImport } from './routes/_app/downloader'
-import { Route as AppCaptionsRouteImport } from './routes/_app/captions'
 
 const AppLayoutRoute = AppLayoutRouteImport.update({
   id: '/_app',
@@ -23,40 +21,24 @@ const AppRouteRoute = AppRouteRouteImport.update({
   path: '/',
   getParentRoute: () => AppLayoutRoute,
 } as any)
-const AppDownloaderRoute = AppDownloaderRouteImport.update({
-  id: '/downloader',
-  path: '/downloader',
-  getParentRoute: () => AppLayoutRoute,
-} as any)
-const AppCaptionsRoute = AppCaptionsRouteImport.update({
-  id: '/captions',
-  path: '/captions',
-  getParentRoute: () => AppLayoutRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppRouteRoute
-  '/captions': typeof AppCaptionsRoute
-  '/downloader': typeof AppDownloaderRoute
 }
 export interface FileRoutesByTo {
-  '/captions': typeof AppCaptionsRoute
-  '/downloader': typeof AppDownloaderRoute
   '/': typeof AppRouteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppLayoutRouteWithChildren
-  '/_app/captions': typeof AppCaptionsRoute
-  '/_app/downloader': typeof AppDownloaderRoute
   '/_app/': typeof AppRouteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/captions' | '/downloader'
+  fullPaths: '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/captions' | '/downloader' | '/'
-  id: '__root__' | '/_app' | '/_app/captions' | '/_app/downloader' | '/_app/'
+  to: '/'
+  id: '__root__' | '/_app' | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -79,32 +61,14 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteRouteImport
       parentRoute: typeof AppLayoutRoute
     }
-    '/_app/downloader': {
-      id: '/_app/downloader'
-      path: '/downloader'
-      fullPath: '/downloader'
-      preLoaderRoute: typeof AppDownloaderRouteImport
-      parentRoute: typeof AppLayoutRoute
-    }
-    '/_app/captions': {
-      id: '/_app/captions'
-      path: '/captions'
-      fullPath: '/captions'
-      preLoaderRoute: typeof AppCaptionsRouteImport
-      parentRoute: typeof AppLayoutRoute
-    }
   }
 }
 
 interface AppLayoutRouteChildren {
-  AppCaptionsRoute: typeof AppCaptionsRoute
-  AppDownloaderRoute: typeof AppDownloaderRoute
   AppRouteRoute: typeof AppRouteRoute
 }
 
 const AppLayoutRouteChildren: AppLayoutRouteChildren = {
-  AppCaptionsRoute: AppCaptionsRoute,
-  AppDownloaderRoute: AppDownloaderRoute,
   AppRouteRoute: AppRouteRoute,
 }
 

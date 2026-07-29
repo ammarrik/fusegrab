@@ -1,4 +1,4 @@
-import { Tabs as Base } from '@base-ui-components/react/tabs'
+import { Tabs as Base } from '@base-ui/react/tabs'
 
 import { cn } from '#/lib/utils'
 

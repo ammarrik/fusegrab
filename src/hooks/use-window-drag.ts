@@ -1,14 +1,18 @@
 import { useRef } from 'react'
 
-const isWindows =
-    typeof window !== 'undefined' && window.windowControls?.platform === 'win32'
-
 export function useWindowDrag() {
     const lastPosRef = useRef<{ x: number; y: number } | null>(null)
 
     const onMouseDown = (e: React.MouseEvent) => {
-        if (!isWindows) return
         if (e.button !== 0) return
+        const target = e.target as HTMLElement | null
+        if (
+            target?.closest(
+                'a, button, input, label, select, textarea, [role="button"], [role="slider"], [role="switch"], [role="tab"], [data-no-drag]',
+            )
+        ) {
+            return
+        }
         lastPosRef.current = { x: e.screenX, y: e.screenY }
 
         const handleMove = (ev: MouseEvent) => {
@@ -31,14 +35,10 @@ export function useWindowDrag() {
         document.addEventListener('mouseup', handleUp)
     }
 
-    const onDoubleClick = () => {
-        if (!isWindows) return
-        window.windowControls?.toggleMaximize()
-    }
-
     const style = {
-        WebkitAppRegion: isWindows ? 'no-drag' : 'drag',
+        WebkitAppRegion: 'drag',
     } as React.CSSProperties
 
-    return { style, onMouseDown, onDoubleClick }
+    return { style, onMouseDown }
 }
+

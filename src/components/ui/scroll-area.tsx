@@ -1,4 +1,4 @@
-import { ScrollArea as Base } from '@base-ui-components/react/scroll-area'
+import { ScrollArea as Base } from '@base-ui/react/scroll-area'
 
 import { cn } from '#/lib/utils'
 

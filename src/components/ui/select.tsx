@@ -1,4 +1,4 @@
-import { Select as Base } from '@base-ui-components/react/select'
+import { Select as Base } from '@base-ui/react/select'
 
 import { Check, ChevronDownIcon } from '#/components/icons'
 import { cn } from '#/lib/utils'

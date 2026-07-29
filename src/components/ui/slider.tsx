@@ -1,4 +1,4 @@
-import { Slider as Base } from '@base-ui-components/react/slider'
+import { Slider as Base } from '@base-ui/react/slider'
 
 import { cn } from '#/lib/utils'
 

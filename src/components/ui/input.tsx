@@ -1,4 +1,4 @@
-import { Input as Base } from '@base-ui-components/react/input'
+import { Input as Base } from '@base-ui/react/input'
 
 import { cn } from '#/lib/utils'
 
