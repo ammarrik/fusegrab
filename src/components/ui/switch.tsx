@@ -33,7 +33,7 @@ export function Switch({
                 className,
             )}
         >
-            <Base.Thumb className="bg-surface block size-3.5 rounded-full shadow-sm transition-[translate] duration-150 ease-out data-checked:translate-x-[14px] data-unchecked:translate-x-0" />
+            <Base.Thumb className="bg-surface block size-3.5 rounded-full shadow-sm transition-[translate] duration-150 ease-out data-checked:translate-x-3.5 data-unchecked:translate-x-0" />
         </Base.Root>
     )
 }

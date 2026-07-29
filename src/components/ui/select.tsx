@@ -81,7 +81,7 @@ export function Select<T extends string>({
                     alignItemWithTrigger={false}
                     className="z-50 outline-none"
                 >
-                    <Base.Popup className="border-border bg-popover max-h-[min(22rem,var(--available-height))] min-w-[var(--anchor-width)] origin-[var(--transform-origin)] overflow-hidden rounded-2xl border p-1.5 shadow-xl shadow-black/10 transition-[transform,opacity] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+                    <Base.Popup className="border-border bg-popover max-h-[min(22rem,var(--available-height))] w-36 min-w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-2xl border p-1.5 shadow-xl shadow-black/10 transition-[transform,opacity] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
                         <Base.List className="max-h-[inherit] overflow-y-auto">
                             {options.map((option) => (
                                 <Base.Item

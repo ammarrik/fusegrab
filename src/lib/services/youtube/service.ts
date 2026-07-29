@@ -1,10 +1,12 @@
 import type { BrowserWindow } from 'electron'
-import { spawn, execFile } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+
+import { app } from 'electron'
+import ffmpegPath from 'ffmpeg-static'
+import { execFile, spawn } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { chmod, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { app } from 'electron'
-import ffmpegPath from 'ffmpeg-static'
 
 export interface YoutubeFormatInfo {
     qualityLabel: string
@@ -25,11 +27,58 @@ export interface YoutubeVideoInfo {
     formats: YoutubeFormatInfo[]
 }
 
+export interface YoutubeChannelVideoItem {
+    id: string
+    title: string
+    url: string
+    thumbnail: string
+    durationSeconds: number
+    author: string
+}
+
+export interface YoutubeChannelInfo {
+    id: string
+    title: string
+    author: string
+    totalVideos: number
+    videos: YoutubeChannelVideoItem[]
+    hasMore: boolean
+    nextPage: number
+}
+
 export interface DownloadOptions {
     url: string
     savePath: string
     qualityItag?: number
     height?: number
+}
+
+export interface DownloadChannelOptions {
+    channelUrl: string
+    saveDir: string
+    qualityHeight?: number
+    isAudioOnly?: boolean
+}
+
+export interface ChannelProgressEvent {
+    currentItem: number
+    totalItems: number
+    percent: number
+    videoTitle?: string
+    status: 'downloading' | 'completed' | 'cancelled' | 'error'
+}
+
+let activeChildProcess: ChildProcess | null = null
+
+export function cancelYoutubeDownload() {
+    if (activeChildProcess) {
+        try {
+            activeChildProcess.kill('SIGTERM')
+        } catch {
+            // ignore
+        }
+        activeChildProcess = null
+    }
 }
 
 function getBinaryName(): string {
@@ -44,11 +93,6 @@ function getDownloadUrl(): string {
 }
 
 async function ensureYtDlpBinary(): Promise<string> {
-    // Check local /tmp pre-downloaded binary first if running in dev
-    if (process.platform === 'darwin' && existsSync('/tmp/yt-dlp_macos')) {
-        return '/tmp/yt-dlp_macos'
-    }
-
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binName = getBinaryName()
     const binPath = path.join(binDir, binName)
@@ -78,6 +122,267 @@ async function ensureYtDlpBinary(): Promise<string> {
     return binPath
 }
 
+export async function getYoutubeUrlType(
+    url: string,
+): Promise<'video' | 'channel'> {
+    const cleanUrl = url.trim()
+    if (!cleanUrl) {
+        throw new Error('Invalid YouTube URL')
+    }
+
+    // Upfront URL pattern checks for fast response
+    if (
+        cleanUrl.includes('/@') ||
+        cleanUrl.includes('/channel/') ||
+        cleanUrl.includes('/c/') ||
+        cleanUrl.includes('/user/') ||
+        cleanUrl.includes('list=')
+    ) {
+        return 'channel'
+    }
+
+    if (
+        cleanUrl.includes('/watch?v=') ||
+        cleanUrl.includes('youtu.be/') ||
+        cleanUrl.includes('/shorts/')
+    ) {
+        return 'video'
+    }
+
+    // Fallback probe with yt-dlp
+    const ytDlpPath = await ensureYtDlpBinary()
+    try {
+        const stdout = await new Promise<string>((resolve, reject) => {
+            execFile(
+                ytDlpPath,
+                [
+                    '--dump-single-json',
+                    '--flat-playlist',
+                    '--playlist-start',
+                    '1',
+                    '--playlist-end',
+                    '1',
+                    '--js-runtimes',
+                    'node',
+                    cleanUrl,
+                ],
+                { maxBuffer: 50 * 1024 * 1024 },
+                (err, out) => {
+                    if (err) return reject(err)
+                    resolve(out)
+                },
+            )
+        })
+
+        const data = JSON.parse(stdout)
+        if (
+            data._type === 'playlist' ||
+            Array.isArray(data.entries) ||
+            data.playlist_count
+        ) {
+            return 'channel'
+        }
+    } catch {
+        // Default to video if probe fails
+    }
+
+    return 'video'
+}
+
+export async function getYoutubeChannelPage(
+    url: string,
+    page = 1,
+    limit = 20,
+): Promise<YoutubeChannelInfo> {
+    const cleanUrl = url.trim()
+    if (!cleanUrl) {
+        throw new Error('Invalid YouTube channel URL')
+    }
+
+    const ytDlpPath = await ensureYtDlpBinary()
+    const start = (page - 1) * limit + 1
+    const end = page * limit
+
+    const stdout = await new Promise<string>((resolve, reject) => {
+        execFile(
+            ytDlpPath,
+            [
+                '--dump-single-json',
+                '--flat-playlist',
+                '--playlist-start',
+                String(start),
+                '--playlist-end',
+                String(end),
+                '--js-runtimes',
+                'node',
+                cleanUrl,
+            ],
+            { maxBuffer: 50 * 1024 * 1024 },
+            (err, out) => {
+                if (err)
+                    return reject(
+                        new Error(
+                            err.message ||
+                                'Failed to fetch YouTube channel info',
+                        ),
+                    )
+                resolve(out)
+            },
+        )
+    })
+
+    const data = JSON.parse(stdout)
+    const rawEntries = Array.isArray(data.entries) ? data.entries : []
+    const totalVideos =
+        data.playlist_count || data.n_entries || rawEntries.length
+
+    const videos: YoutubeChannelVideoItem[] = rawEntries.map((e: any) => {
+        const videoId = e.id || e.url?.replace(/.*v=/, '') || ''
+        let thumb = ''
+        if (Array.isArray(e.thumbnails) && e.thumbnails.length > 0) {
+            thumb = e.thumbnails[e.thumbnails.length - 1].url
+        } else if (videoId) {
+            thumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+        }
+
+        const videoUrl = e.url
+            ? e.url.startsWith('http')
+                ? e.url
+                : `https://www.youtube.com/watch?v=${e.url}`
+            : `https://www.youtube.com/watch?v=${videoId}`
+
+        return {
+            id: videoId,
+            title: e.title || 'Untitled Video',
+            url: videoUrl,
+            thumbnail: thumb,
+            durationSeconds: Math.round(e.duration || 0),
+            author:
+                e.uploader ||
+                e.channel ||
+                data.uploader ||
+                data.channel ||
+                data.title ||
+                'YouTube',
+        }
+    })
+
+    const hasMore = rawEntries.length >= limit || totalVideos > end
+
+    return {
+        id: data.id || cleanUrl,
+        title: data.title || data.uploader || 'YouTube Channel',
+        author: data.uploader || data.channel || 'YouTube',
+        totalVideos: totalVideos || videos.length,
+        videos,
+        hasMore,
+        nextPage: page + 1,
+    }
+}
+
+export async function downloadYoutubeChannel(
+    win: BrowserWindow | null,
+    options: DownloadChannelOptions,
+): Promise<void> {
+    const { channelUrl, saveDir, qualityHeight, isAudioOnly } = options
+
+    const cleanUrl = channelUrl.trim()
+    const ytDlpPath = await ensureYtDlpBinary()
+
+    const args: string[] = [
+        '--js-runtimes',
+        'node',
+        '--newline',
+        '--merge-output-format',
+        'mp4',
+    ]
+
+    if (ffmpegPath && existsSync(ffmpegPath)) {
+        args.push('--ffmpeg-location', ffmpegPath)
+    }
+
+    if (isAudioOnly) {
+        args.push('-f', 'bestaudio', '-x', '--audio-format', 'mp3')
+    } else if (qualityHeight) {
+        args.push('-f', `bestvideo[height<=${qualityHeight}]+bestaudio/best`)
+    } else {
+        args.push('-f', 'bestvideo+bestaudio/best')
+    }
+
+    const outputTemplate = path.join(saveDir, '%(title)s [%(id)s].%(ext)s')
+    args.push('-o', outputTemplate, cleanUrl)
+
+    cancelYoutubeDownload()
+
+    const proc = spawn(ytDlpPath, args)
+    activeChildProcess = proc
+
+    let currentItem = 0
+    let totalItems = 0
+    let videoTitle = ''
+
+    return new Promise((resolve, reject) => {
+        proc.stdout.on('data', (data: Buffer) => {
+            const lines = data.toString().split('\n')
+            for (const line of lines) {
+                const itemMatch = line.match(
+                    /\[download\]\s+Downloading\s+(?:item|video)\s+(\d+)\s+of\s+(\d+)/i,
+                )
+                if (itemMatch) {
+                    currentItem = parseInt(itemMatch[1], 10)
+                    totalItems = parseInt(itemMatch[2], 10)
+                }
+
+                const destMatch = line.match(
+                    /\[download\]\s+Destination:\s+(.+)/i,
+                )
+                if (destMatch) {
+                    videoTitle = path.basename(destMatch[1])
+                }
+
+                if (line.includes('[download]')) {
+                    const match = line.match(/\[download\]\s+([\d.]+)%/)
+                    if (match) {
+                        const percent = parseFloat(match[1])
+                        if (!isNaN(percent) && win && !win.isDestroyed()) {
+                            win.webContents.send('youtube:channel-progress', {
+                                currentItem,
+                                totalItems,
+                                percent: Math.min(100, percent),
+                                videoTitle,
+                                status: 'downloading',
+                            } satisfies ChannelProgressEvent)
+                        }
+                    }
+                }
+            }
+        })
+
+        proc.on('error', (err) => {
+            activeChildProcess = null
+            reject(err)
+        })
+
+        proc.on('close', (code) => {
+            activeChildProcess = null
+            if (code === 0) {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send('youtube:channel-progress', {
+                        currentItem: totalItems || currentItem,
+                        totalItems: totalItems || currentItem,
+                        percent: 100,
+                        videoTitle,
+                        status: 'completed',
+                    } satisfies ChannelProgressEvent)
+                }
+                resolve()
+            } else {
+                reject(new Error(`Channel download exited with code ${code}`))
+            }
+        })
+    })
+}
+
 export async function getYoutubeVideoInfo(
     url: string,
 ): Promise<YoutubeVideoInfo> {
@@ -96,7 +401,9 @@ export async function getYoutubeVideoInfo(
             (err, out) => {
                 if (err)
                     return reject(
-                        new Error(err.message || 'Failed to fetch YouTube video info'),
+                        new Error(
+                            err.message || 'Failed to fetch YouTube video info',
+                        ),
                     )
                 resolve(out)
             },
@@ -203,7 +510,10 @@ export async function downloadYoutubeVideo(
 
     args.push('-o', savePath, cleanUrl)
 
+    cancelYoutubeDownload()
+
     const proc = spawn(ytDlpPath, args)
+    activeChildProcess = proc
     const stderrLines: string[] = []
 
     return new Promise((resolve, reject) => {
@@ -211,7 +521,7 @@ export async function downloadYoutubeVideo(
             const lines = data.toString().split('\n')
             for (const line of lines) {
                 if (line.includes('[download]')) {
-                    const match = line.match(/\[download\]\s+([\d\.]+)%/)
+                    const match = line.match(/\[download\]\s+([\d.]+)%/)
                     if (match) {
                         const percent = parseFloat(match[1])
                         if (!isNaN(percent)) {
@@ -236,11 +546,13 @@ export async function downloadYoutubeVideo(
         })
 
         proc.on('error', async (err) => {
+            activeChildProcess = null
             await rm(savePath, { force: true }).catch(() => undefined)
             reject(err)
         })
 
         proc.on('close', async (code) => {
+            activeChildProcess = null
             let finalPath = savePath
             if (!existsSync(finalPath)) {
                 const candidates = [

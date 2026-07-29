@@ -20,7 +20,7 @@ export function TabList({
         >
             {children}
             {/* Sits under the active tab and slides between them. */}
-            <Base.Indicator className="bg-foreground absolute bottom-0 left-0 z-10 h-[1.5px] w-[var(--active-tab-width)] translate-x-[var(--active-tab-left)] rounded-full transition-[translate,width] duration-200 ease-out" />
+            <Base.Indicator className="bg-foreground absolute bottom-0 left-0 z-10 h-[1.5px] w-(--active-tab-width) translate-x-(--active-tab-left) rounded-full transition-[translate,width] duration-200 ease-out" />
         </Base.List>
     )
 }

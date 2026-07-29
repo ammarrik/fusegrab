@@ -2,7 +2,10 @@
 import type { SaveTarget } from '#/lib/services/files/service'
 import type { UpdateState } from '#/lib/services/updater/service'
 import type {
+    ChannelProgressEvent,
+    DownloadChannelOptions,
     DownloadOptions,
+    YoutubeChannelInfo,
     YoutubeVideoInfo,
 } from '#/lib/services/youtube/service'
 
@@ -24,15 +27,28 @@ declare global {
             }
             youtube: {
                 getInfo: (url: string) => Promise<YoutubeVideoInfo>
+                getUrlType: (url: string) => Promise<'video' | 'channel'>
+                getChannelPage: (
+                    url: string,
+                    page?: number,
+                    limit?: number,
+                ) => Promise<YoutubeChannelInfo>
                 download: (
                     options: DownloadOptions,
                 ) => Promise<{ filePath: string; size: number }>
+                downloadChannel: (
+                    options: DownloadChannelOptions,
+                ) => Promise<void>
+                cancelDownload: () => Promise<void>
                 onProgress: (
                     cb: (progress: {
                         downloadedBytes: number
                         totalBytes: number
                         percent: number
                     }) => void,
+                ) => () => void
+                onChannelProgress: (
+                    cb: (progress: ChannelProgressEvent) => void,
                 ) => () => void
             }
         }

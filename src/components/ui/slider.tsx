@@ -46,7 +46,7 @@ export function Slider({
                             'border-border-strong bg-surface h-4 w-2 rounded-[3px] border shadow-sm outline-none',
                             // A slightly overshooting curve gives the grow a bit
                             // of bounce instead of a linear slide.
-                            'transition-[transform,box-shadow,border-color] duration-150 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)]',
+                            'transition-[transform,box-shadow,border-color] duration-150 ease-[cubic-bezier(0.34,1.56,0.64,1)]',
                             'hover:border-foreground/50 hover:scale-115',
                             'data-dragging:border-foreground/60 data-dragging:ring-foreground/10 data-dragging:scale-115 data-dragging:ring-4',
                             'focus-visible:ring-ring/50 focus-visible:ring-2',

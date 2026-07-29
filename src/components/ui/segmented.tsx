@@ -40,7 +40,7 @@ export function Segmented<T extends string>({
                 // An empty array means the pressed segment was toggled off; a
                 // single choice always keeps one selected.
                 const [chosen] = next
-                if (chosen != null) onValueChange(chosen as T)
+                if (chosen != null) onValueChange(chosen)
             }}
             className={cn(
                 'bg-muted flex w-full gap-0.5 rounded-md p-0.5',

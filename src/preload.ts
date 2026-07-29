@@ -50,11 +50,25 @@ contextBridge.exposeInMainWorld('api', {
     },
     youtube: {
         getInfo: (url: string) => ipcRenderer.invoke('youtube:get-info', url),
+        getUrlType: (url: string) =>
+            ipcRenderer.invoke('youtube:get-url-type', url) as Promise<
+                'video' | 'channel'
+            >,
+        getChannelPage: (url: string, page?: number, limit?: number) =>
+            ipcRenderer.invoke('youtube:get-channel-page', url, page, limit),
         download: (options: {
             url: string
             savePath: string
             qualityItag?: number
+            height?: number
         }) => ipcRenderer.invoke('youtube:download', options),
+        downloadChannel: (options: {
+            channelUrl: string
+            saveDir: string
+            qualityHeight?: number
+            isAudioOnly?: boolean
+        }) => ipcRenderer.invoke('youtube:download-channel', options),
+        cancelDownload: () => ipcRenderer.invoke('youtube:cancel-download'),
         onProgress: (
             cb: (progress: {
                 downloadedBytes: number
@@ -66,6 +80,21 @@ contextBridge.exposeInMainWorld('api', {
             ipcRenderer.on('youtube:progress', handler)
             return () => {
                 ipcRenderer.off('youtube:progress', handler)
+            }
+        },
+        onChannelProgress: (
+            cb: (progress: {
+                currentItem: number
+                totalItems: number
+                percent: number
+                videoTitle?: string
+                status: 'downloading' | 'completed' | 'cancelled' | 'error'
+            }) => void,
+        ) => {
+            const handler = (_: unknown, progress: any) => cb(progress)
+            ipcRenderer.on('youtube:channel-progress', handler)
+            return () => {
+                ipcRenderer.off('youtube:channel-progress', handler)
             }
         },
     },

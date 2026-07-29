@@ -24,7 +24,11 @@ import {
     setUpdaterWindow,
 } from './lib/services/updater/service'
 import {
+    cancelYoutubeDownload,
+    downloadYoutubeChannel,
     downloadYoutubeVideo,
+    getYoutubeChannelPage,
+    getYoutubeUrlType,
     getYoutubeVideoInfo,
 } from './lib/services/youtube/service'
 
@@ -226,6 +230,19 @@ handle('updater:install', () => quitAndInstall())
 handle('app:get-version', () => app.getVersion())
 
 handle('youtube:get-info', (_event, url: string) => getYoutubeVideoInfo(url))
+handle('youtube:get-url-type', (_event, url: string) => getYoutubeUrlType(url))
+handle(
+    'youtube:get-channel-page',
+    (_event, url: string, page?: number, limit?: number) =>
+        getYoutubeChannelPage(url, page, limit),
+)
 handle('youtube:download', (event, options) =>
     downloadYoutubeVideo(BrowserWindow.fromWebContents(event.sender), options),
 )
+handle('youtube:download-channel', (event, options) =>
+    downloadYoutubeChannel(
+        BrowserWindow.fromWebContents(event.sender),
+        options,
+    ),
+)
+handle('youtube:cancel-download', () => cancelYoutubeDownload())

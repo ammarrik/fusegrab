@@ -33,7 +33,7 @@ export function ScrollArea({
                     'h-full w-full overscroll-contain',
                     // Base UI's viewport applies overflow itself; the native
                     // scrollbars would double up with ours.
-                    '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                    'scrollbar-none [&::-webkit-scrollbar]:hidden',
                     contentClassName,
                 )}
             >
