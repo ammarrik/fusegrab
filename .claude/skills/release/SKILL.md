@@ -57,10 +57,10 @@ hdiutil detach "/Volumes/Recreate"
 Notes:
 
 - The `.dmg` maker (`@electron-forge/maker-dmg`) pulls in `appdmg`, which needs the native modules `fs-xattr` and `macos-alias` compiled. They're listed in pnpm's `onlyBuiltDependencies`, so a clean `pnpm install` builds them. If `make` fails with a "Cannot find module …xattr/volume" error, compile them directly and retry:
-  ```bash
-  ( cd node_modules/fs-xattr && npx node-gyp rebuild )
-  ( cd node_modules/macos-alias && npx node-gyp rebuild )
-  ```
+    ```bash
+    ( cd node_modules/fs-xattr && npx node-gyp rebuild )
+    ( cd node_modules/macos-alias && npx node-gyp rebuild )
+    ```
 - **Apple Silicon only.** `scripts/install-ffmpeg.mjs` installs a single host-arch ffmpeg, so a cross-packaged x64 `.dmg` would bundle the arm64 ffmpeg and break on Intel Macs. Don't build `--arch=x64`/`universal` for macOS without first fetching an x64 ffmpeg for the bundle.
 - The build is **unsigned / unnotarized** — see the macOS Install note in step 3.
 

@@ -98,8 +98,17 @@ function Layout() {
                 )}
             >
                 {!isWindows && (
+                    /* The negative z-index is load-bearing. Chromium builds the
+                       window's draggable region by walking the tree in paint
+                       order, adding `drag` rects and subtracting `no-drag` ones,
+                       so a control only carves itself out of this strip if it
+                       paints *after* it. A positioned element — even at z-index
+                       0 — paints above in-flow content, which would leave the
+                       whole strip draggable and every control beneath it dead.
+                       At a negative z-index the strip paints first and the
+                       controls win. It's invisible and click-through regardless. */
                     <div
-                        className="window-drag-region pointer-events-none fixed top-0 left-0 z-10 h-10 w-full shrink-0"
+                        className="window-drag-region pointer-events-none fixed top-0 left-0 -z-10 h-10 w-full shrink-0"
                         style={drag.style}
                     />
                 )}

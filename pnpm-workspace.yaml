@@ -2,16 +2,23 @@
 nodeLinker: hoisted
 blockExoticSubdeps: false
 allowBuilds:
-  electron: true
-  electron-winstaller: true
-  esbuild: true
-  # ffmpeg-static's own install script hard-exits on arm64 (no published
-  # binary), which would abort `pnpm i`. Disabled here; the root postinstall
-  # runs scripts/install-ffmpeg.mjs instead, fetching the x64 build as a
-  # fallback (the runtime remaps arm64 -> x64). See scripts/install-ffmpeg.mjs.
-  ffmpeg-static: false
-  fs-xattr: true
-  macos-alias: true
-  msw: true
-  spawn-sync: true
-  unrs-resolver: true
+    electron: true
+    electron-winstaller: true
+    esbuild: true
+    # ffmpeg-static's own install script hard-exits on arm64 (no published
+    # binary), which would abort `pnpm i`. Disabled here; the root postinstall
+    # runs scripts/install-ffmpeg.mjs instead, fetching the x64 build as a
+    # fallback (the runtime remaps arm64 -> x64). See scripts/install-ffmpeg.mjs.
+    ffmpeg-static: false
+    fs-xattr: true
+    macos-alias: true
+    msw: true
+    # @huggingface/transformers depends on these for its Node build. Auto Captions
+    # only ever uses the web build (onnxruntime-web + WebAssembly) inside the
+    # renderer, so their native install scripts have nothing to do here — and
+    # forge.config.ts keeps all three out of the packaged app.
+    onnxruntime-node: false
+    protobufjs: false
+    sharp: false
+    spawn-sync: true
+    unrs-resolver: true

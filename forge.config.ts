@@ -1,5 +1,20 @@
 import { VitePlugin } from '@electron-forge/plugin-vite'
 
+// Dependencies the renderer uses but the packaged app must not carry a copy of.
+// Vite bundles their code into /.vite (and the `fuse:onnx-runtime` plugin copies
+// the one 23 MB wasm file Auto Captions actually loads), so shipping these
+// source trees as well would add roughly 370 MB of dead weight — most of it
+// onnxruntime-node, a native Node build we never load, and sharp's platform
+// binaries. Both are hard dependencies of @huggingface/transformers.
+const RENDERER_ONLY_MODULES = [
+    '@huggingface',
+    '@img',
+    'mediabunny',
+    'onnxruntime-node',
+    'onnxruntime-web',
+    'sharp',
+]
+
 const config = {
     packagerConfig: {
         // Product name — capital "F". Drives the macOS .app bundle name, the
@@ -28,6 +43,14 @@ const config = {
         ignore: (file: string) => {
             if (!file) return false
             if (file.startsWith('/.vite')) return false
+            if (
+                RENDERER_ONLY_MODULES.some(
+                    (name) =>
+                        file === `/node_modules/${name}` ||
+                        file.startsWith(`/node_modules/${name}/`),
+                )
+            )
+                return true
             if (file === '/node_modules' || file.startsWith('/node_modules/'))
                 return false
             if (file === '/package.json') return false

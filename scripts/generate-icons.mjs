@@ -208,7 +208,9 @@ async function main() {
     console.log(`  ${path.relative(root, OUT_ICNS)}  (macOS)`)
     console.log(`  ${path.relative(root, OUT_ICO)}  (Windows)`)
     console.log(`  ${path.relative(root, OUT_ROUNDED)}  (runtime window icon)`)
-    console.log(`  ${path.relative(root, INDEX_HTML)}  (inlined loading-splash icon)`)
+    console.log(
+        `  ${path.relative(root, INDEX_HTML)}  (inlined loading-splash icon)`,
+    )
 }
 
 main().catch((err) => {

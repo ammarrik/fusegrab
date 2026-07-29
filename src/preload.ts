@@ -1,4 +1,29 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+contextBridge.exposeInMainWorld('files', {
+    // Electron 32 removed the non-standard `File.path`; this is the sanctioned
+    // replacement. The tools need the real path of a dropped/picked file to
+    // suggest an output location next to the original.
+    pathForFile: (file: File) => webUtils.getPathForFile(file),
+    chooseSavePath: (target: unknown) =>
+        ipcRenderer.invoke('files:choose-save-path', target) as Promise<
+            string | null
+        >,
+    saveText: (target: unknown, contents: string) =>
+        ipcRenderer.invoke('files:save-text', target, contents) as Promise<
+            string | null
+        >,
+    openWrite: (filePath: string) =>
+        ipcRenderer.invoke('files:open-write', filePath) as Promise<number>,
+    write: (id: number, position: number, data: Uint8Array) =>
+        ipcRenderer.invoke('files:write', id, position, data) as Promise<void>,
+    closeWrite: (id: number, discard = false) =>
+        ipcRenderer.invoke('files:close-write', id, discard) as Promise<{
+            filePath: string
+            size: number
+        } | null>,
+    reveal: (filePath: string) => ipcRenderer.invoke('files:reveal', filePath),
+})
 
 contextBridge.exposeInMainWorld('api', {
     updater: {

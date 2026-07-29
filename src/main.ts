@@ -5,6 +5,15 @@ import { fileURLToPath } from 'node:url'
 
 import { toFriendlyError } from './lib/network-error'
 import {
+    chooseSavePath,
+    closeAllWriteStreams,
+    closeWriteStream,
+    openWriteStream,
+    revealInFolder,
+    saveTextFile,
+    writeStreamChunk,
+} from './lib/services/files/service'
+import {
     checkForUpdate,
     cleanupStaleInstallers,
     downloadUpdate,
@@ -47,6 +56,22 @@ const isMac = process.platform === 'darwin'
 if (!app.isPackaged) {
     app.commandLine.appendSwitch('disable-http-cache')
 }
+
+// Auto Captions runs Whisper locally through ONNX Runtime's WebAssembly
+// backend, which needs two things Chromium withholds by default:
+//
+//  1. SharedArrayBuffer — required for multi-threaded wasm. Chromium normally
+//     gates it behind cross-origin isolation (COOP/COEP), which a file://
+//     document can't opt into. Without the flag ORT drops to a single thread
+//     and transcription takes several times longer.
+//  2. file:// script loading — the packaged renderer is loaded from a file URL,
+//     whose origin is opaque ("null"), so spawning the transcription Web Worker
+//     is treated as a cross-origin script fetch and blocked. Only our own
+//     bundled pages are ever loaded, so widening this is contained.
+//
+// Both are no-ops in dev, where the renderer is served over http://localhost.
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+app.commandLine.appendSwitch('allow-file-access-from-files')
 
 // Runtime window/taskbar icon. macOS uses the app bundle's .icns, so this is
 // only needed on Windows/Linux. In packaged builds the rounded PNG is shipped
@@ -137,6 +162,12 @@ app.on('ready', async () => {
     }, 4000)
 })
 
+// A cancelled or crashed export can leave a file handle open; make sure they're
+// all closed (and their partial files removed) before the process goes away.
+app.on('before-quit', () => {
+    void closeAllWriteStreams()
+})
+
 // Quit when all windows are closed, except on macOS.
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
@@ -190,6 +221,25 @@ handle('window:move-by', (event, dx: number, dy: number) => {
     const [x, y] = win.getPosition()
     win.setPosition(x + Math.round(dx), y + Math.round(dy))
 })
+
+handle('files:choose-save-path', (event, target) =>
+    chooseSavePath(BrowserWindow.fromWebContents(event.sender), target),
+)
+handle('files:save-text', (event, target, contents: string) =>
+    saveTextFile(BrowserWindow.fromWebContents(event.sender), target, contents),
+)
+handle('files:open-write', (_event, filePath: string) =>
+    openWriteStream(filePath),
+)
+handle(
+    'files:write',
+    (_event, id: number, position: number, data: Uint8Array) =>
+        writeStreamChunk(id, position, data),
+)
+handle('files:close-write', (_event, id: number, discard: boolean) =>
+    closeWriteStream(id, discard),
+)
+handle('files:reveal', (_event, filePath: string) => revealInFolder(filePath))
 
 handle('updater:get-state', () => getUpdateState())
 handle('updater:check', () => checkForUpdate())

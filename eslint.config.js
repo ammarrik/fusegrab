@@ -18,7 +18,14 @@ export default [
     {
         // *.mjs: the shared config only registers its plugins for js/ts/tsx,
         // so the rule overrides below crash eslint on plain .mjs scripts.
-        ignores: ['eslint.config.js', 'prettier.config.js', '**/*.mjs'],
+        // .vite: build output. tsconfig excludes it, so linting it fails with
+        // "TSConfig does not include this file" after any `pnpm package`.
+        ignores: [
+            'eslint.config.js',
+            'prettier.config.js',
+            '**/*.mjs',
+            '.vite/**',
+        ],
     },
     {
         plugins: {
