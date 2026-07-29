@@ -189,16 +189,356 @@ export async function getYoutubeUrlType(
     return 'video'
 }
 
+/**
+ * Normalises a YouTube channel/playlist URL so it points at the /videos tab.
+ * Playlist URLs (list=…) are returned as-is since they don't have a /videos tab.
+ */
+function toChannelVideosUrl(raw: string): string {
+    if (raw.includes('list=')) return raw
+    const base = raw
+        .replace(/\/(videos|shorts|streams|playlists|community|about|channels)\s*$/i, '')
+        .replace(/\/+$/, '')
+    return `${base}/videos`
+}
+
+/**
+ * Parses a YouTube duration string like "12:34" or "1:02:03" into seconds.
+ */
+function parseDurationText(text: string): number {
+    if (!text) return 0
+    const clean = text.replace(/\s/g, '')
+    const parts = clean.split(':').map(Number)
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    if (parts.length === 2) return parts[0] * 60 + parts[1]
+    return parts[0] || 0
+}
+
+
+// ─── Browser-based channel video scraping ─────────────────────────────────────
+
+interface ChannelCache {
+    channelTitle: string
+    videos: YoutubeChannelVideoItem[]
+    hasMore: boolean
+    timestamp: number
+}
+
+const channelVideoCache = new Map<string, ChannelCache>()
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * Scrapes channel videos using a hidden BrowserWindow.
+ *
+ * Uses a persistent session partition so YouTube consent cookies are
+ * remembered across scrapes. Auto-dismisses consent dialogs if they appear.
+ * Does NOT use offscreen: true (which cripples IntersectionObserver) or
+ * sandbox: true (which can block network in custom partitions).
+ */
+async function scrapeChannelWithBrowser(
+    url: string,
+    targetNeeded: number,
+): Promise<{ channelTitle: string; videos: YoutubeChannelVideoItem[]; hasMore: boolean } | null> {
+    const { BrowserWindow, session } = await import('electron')
+
+    const targetUrl = toChannelVideosUrl(url)
+
+    // Persistent partition so YouTube consent cookies survive between scrapes
+    const ses = session.fromPartition('persist:yt-scraper')
+
+    const win = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 900,
+        webPreferences: {
+            backgroundThrottling: false,
+            session: ses,
+            contextIsolation: true,
+            nodeIntegration: false,
+        },
+    })
+
+    win.webContents.setAudioMuted(true)
+    win.webContents.setUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    )
+
+    try {
+        await win.loadURL(targetUrl)
+
+        // Auto-dismiss YouTube consent dialog if present.
+        await win.webContents.executeJavaScript(`
+            new Promise((resolve) => {
+                const dismiss = () => {
+                    const consentBtn =
+                        document.querySelector('button[aria-label*="Accept"], button[aria-label*="accept"], tp-yt-paper-button[aria-label*="Accept"]') ||
+                        document.querySelector('form[action*="consent"] button') ||
+                        document.querySelector('[class*="consent"] button:last-child') ||
+                        document.querySelector('ytd-consent-bump-v2-lightbox button.yt-spec-button-shape-next--filled');
+                    if (consentBtn) {
+                        consentBtn.click();
+                        setTimeout(resolve, 2000);
+                    } else {
+                        resolve(true);
+                    }
+                };
+                setTimeout(dismiss, 1500);
+            });
+        `)
+
+        // Wait for video elements to render
+        const hasVideos = await win.webContents.executeJavaScript(`
+            new Promise((resolve) => {
+                let attempts = 0;
+                const check = () => {
+                    const items = Array.from(document.querySelectorAll(
+                        'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
+                    )).filter(item => {
+                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
+                        if (!link) return false;
+                        const href = link.getAttribute('href') || link.href || '';
+                        return /(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/.test(href);
+                    });
+
+                    if (items.length > 0) {
+                        resolve(true);
+                        return;
+                    }
+                    if (attempts > 60) {
+                        resolve(false);
+                        return;
+                    }
+                    attempts++;
+                    setTimeout(check, 500);
+                };
+                check();
+            });
+        `)
+
+        if (!hasVideos) {
+            return null
+        }
+
+        // Scroll down to load videos up to targetNeeded.
+        // Returns whether more videos exist on YouTube ({ count, reachedEnd })
+        const scrollResult = await win.webContents.executeJavaScript(`
+            new Promise((resolve) => {
+                const totalNeeded = ${targetNeeded};
+                let lastCount = 0;
+                let stale = 0;
+                let scrollAttempts = 0;
+
+                const doScroll = () => {
+                    const items = Array.from(document.querySelectorAll(
+                        'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
+                    )).filter(item => {
+                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
+                        if (!link) return false;
+                        const href = link.getAttribute('href') || link.href || '';
+                        return /(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/.test(href);
+                    });
+                    const count = items.length;
+
+                    if (count >= totalNeeded) {
+                        resolve({ count, reachedEnd: false });
+                        return;
+                    }
+
+                    if (scrollAttempts >= 60) {
+                        resolve({ count, reachedEnd: false });
+                        return;
+                    }
+
+                    if (count === lastCount) {
+                        stale++;
+                        if (stale >= 5) {
+                            resolve({ count, reachedEnd: true });
+                            return;
+                        }
+                    } else {
+                        stale = 0;
+                        lastCount = count;
+                    }
+
+                    scrollAttempts++;
+
+                    const continuation = document.querySelector(
+                        'ytd-continuation-item-renderer, tp-yt-paper-spinner'
+                    );
+                    if (continuation) {
+                        continuation.scrollIntoView({ behavior: 'instant', block: 'center' });
+                    }
+                    window.scrollTo(0, 999999);
+                    window.dispatchEvent(new Event('scroll', { bubbles: true }));
+
+                    setTimeout(doScroll, 1200);
+                };
+
+                setTimeout(doScroll, 800);
+            });
+        `)
+
+        // Scrape video data from the DOM
+        const scraped = await win.webContents.executeJavaScript(`
+            (() => {
+                const channelTitle = (
+                    document.querySelector('yt-formatted-string#text.ytd-channel-name')?.textContent ||
+                    document.querySelector('#channel-name yt-formatted-string')?.textContent ||
+                    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+                    ''
+                ).trim();
+
+                const rawItems = Array.from(document.querySelectorAll(
+                    'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
+                ));
+
+                const videos = [];
+                const seen = new Set();
+
+                rawItems.forEach(item => {
+                    try {
+                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
+                        if (!link) return;
+                        const href = link.getAttribute('href') || link.href || '';
+                        const match = href.match(/(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/);
+                        if (!match) return;
+                        const videoId = match[1];
+                        if (seen.has(videoId)) return;
+
+                        const titleEl = item.querySelector('#video-title-link, #video-title, h3, yt-formatted-string#video-title') || link;
+                        const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+                        if (!title || title.toLowerCase().includes(' - videos') || title.toLowerCase().includes(' - shorts')) return;
+
+                        seen.add(videoId);
+
+                        let thumbnail = '';
+                        const thumbEl = item.querySelector('ytd-thumbnail img, img#img, img.yt-core-image');
+                        if (thumbEl) {
+                            thumbnail = thumbEl.src || thumbEl.getAttribute('src') || '';
+                        }
+                        if (!thumbnail || thumbnail.startsWith('data:')) {
+                            thumbnail = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
+                        }
+
+                        const durationEl = item.querySelector(
+                            'ytd-thumbnail-overlay-time-status-renderer #text,' +
+                            'ytd-thumbnail-overlay-time-status-renderer span, badge-shape .badge-shape-wiz__text'
+                        );
+                        const durationText = (durationEl?.textContent || '').trim();
+
+                        const authorEl = item.querySelector('ytd-channel-name #text a, ytd-channel-name a');
+                        const author = (authorEl?.textContent || channelTitle || 'YouTube').trim();
+
+                        videos.push({
+                            id: videoId,
+                            title: title || 'Untitled Video',
+                            url: 'https://www.youtube.com/watch?v=' + videoId,
+                            thumbnail,
+                            durationText,
+                            author,
+                        });
+                    } catch {}
+                });
+
+                return { channelTitle, videos };
+            })();
+        `)
+
+        if (!scraped || !Array.isArray(scraped.videos) || scraped.videos.length === 0) {
+            return null
+        }
+
+        const allVideos: YoutubeChannelVideoItem[] = scraped.videos.map(
+            (v: any) => ({
+                id: v.id,
+                title: v.title,
+                url: v.url,
+                thumbnail: v.thumbnail,
+                durationSeconds: parseDurationText(v.durationText || ''),
+                author: v.author,
+            }),
+        )
+
+        const reachedEnd = scrollResult?.reachedEnd ?? false
+
+        return {
+            channelTitle: scraped.channelTitle || 'YouTube Channel',
+            videos: allVideos,
+            hasMore: !reachedEnd,
+        }
+    } catch {
+        return null
+    } finally {
+        try {
+            win.destroy()
+        } catch {}
+    }
+}
+
 export async function getYoutubeChannelPage(
     url: string,
     page = 1,
-    limit = 20,
+    limit = 10,
 ): Promise<YoutubeChannelInfo> {
     const cleanUrl = url.trim()
     if (!cleanUrl) {
         throw new Error('Invalid YouTube channel URL')
     }
 
+    const skipCount = (page - 1) * limit
+    const targetNeeded = Math.max((page + 4) * limit, 50)
+
+    // 1. Check in-memory cache
+    const now = Date.now()
+    let cached = channelVideoCache.get(cleanUrl)
+    if (cached && now - cached.timestamp > CACHE_TTL_MS) {
+        channelVideoCache.delete(cleanUrl)
+        cached = undefined
+    }
+
+    // 2. If we don't have enough cached videos for this page and YouTube has more, scrape
+    if (!cached || (cached.videos.length < skipCount + limit && cached.hasMore)) {
+        const result = await scrapeChannelWithBrowser(cleanUrl, targetNeeded)
+        if (result && result.videos.length > 0) {
+            cached = {
+                channelTitle: result.channelTitle,
+                videos: result.videos,
+                hasMore: result.hasMore,
+                timestamp: Date.now(),
+            }
+            channelVideoCache.set(cleanUrl, cached)
+        }
+    }
+
+    // 3. Serve from cache if available
+    if (cached && cached.videos.length > 0) {
+        const pageVideos = cached.videos.slice(skipCount, skipCount + limit)
+        const hasMore =
+            pageVideos.length > 0 &&
+            (cached.hasMore || cached.videos.length > skipCount + limit)
+
+        return {
+            id: cleanUrl,
+            title: cached.channelTitle || 'YouTube Channel',
+            author: cached.channelTitle || 'YouTube',
+            totalVideos: cached.videos.length,
+            videos: pageVideos,
+            hasMore,
+            nextPage: page + 1,
+        }
+    }
+
+    // 4. Fallback to yt-dlp
+    return getChannelPageViaYtDlp(cleanUrl, page, limit)
+}
+
+/**
+ * Fallback: uses yt-dlp --flat-playlist to list channel videos.
+ */
+async function getChannelPageViaYtDlp(
+    url: string,
+    page: number,
+    limit: number,
+): Promise<YoutubeChannelInfo> {
     const ytDlpPath = await ensureYtDlpBinary()
     const start = (page - 1) * limit + 1
     const end = page * limit
@@ -215,7 +555,7 @@ export async function getYoutubeChannelPage(
                 String(end),
                 '--js-runtimes',
                 'node',
-                cleanUrl,
+                url,
             ],
             { maxBuffer: 50 * 1024 * 1024 },
             (err, out) => {
@@ -270,7 +610,7 @@ export async function getYoutubeChannelPage(
     const hasMore = rawEntries.length >= limit || totalVideos > end
 
     return {
-        id: data.id || cleanUrl,
+        id: data.id || url,
         title: data.title || data.uploader || 'YouTube Channel',
         author: data.uploader || data.channel || 'YouTube',
         totalVideos: totalVideos || videos.length,

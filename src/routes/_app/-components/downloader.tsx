@@ -127,7 +127,7 @@ export function YoutubeDownloader() {
                 const data = await window.api.youtube.getChannelPage(
                     clean,
                     1,
-                    20,
+                    10,
                 )
                 setChannelInfo(data)
                 setVideos(data.videos)
@@ -165,7 +165,7 @@ export function YoutubeDownloader() {
             const data = await window.api.youtube.getChannelPage(
                 url.trim(),
                 nextPageNum,
-                20,
+                10,
             )
 
             setVideos((prev) => {
@@ -370,109 +370,114 @@ export function YoutubeDownloader() {
                     </h1>
                 </div>
 
-                {/* Pill Search Bar */}
-                <div className="relative">
-                    <div className="border-border/80 bg-surface focus-within:border-border-strong focus-within:ring-ring/20 flex h-12 w-full items-center gap-2 rounded-full border px-2 shadow-[0_2px_12px_rgb(0_0_0/0.06)] transition-[border-color,box-shadow] focus-within:ring-2">
-                        {/* Plus button with Base UI Popover dropdown */}
-                        <Popover
-                            open={showFolderDropdown}
-                            onOpenChange={setShowFolderDropdown}
-                        >
-                            <PopoverTrigger
-                                type="button"
-                                className="text-foreground/70 hover:bg-muted hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-full transition-colors outline-none"
-                                title={`Save location: ${downloadDir || 'Default'}`}
-                                aria-label="Select save location"
+                {/* Pill Search Bar (Sticky at top with 100% white opacity above and behind input field, fading to 0% at bottom side) */}
+                <div className="sticky top-0 z-30 transition-all">
+                    <div className="bg-white pt-3 pb-1">
+                        <div className="border-border/80 bg-surface focus-within:border-border-strong focus-within:ring-ring/20 flex h-12 w-full items-center gap-2 rounded-full border px-2 shadow-[0_2px_12px_rgb(0_0_0/0.06)] transition-[border-color,box-shadow] focus-within:ring-2">
+                            {/* Plus button with Base UI Popover dropdown */}
+                            <Popover
+                                open={showFolderDropdown}
+                                onOpenChange={setShowFolderDropdown}
                             >
-                                <Plus className="size-4" />
-                            </PopoverTrigger>
-                            <PopoverContent
-                                sideOffset={12}
-                                className="w-64 space-y-2.5 p-3.5"
-                            >
-                                {/* Title header with Reset icon button on right */}
-                                <div className="flex items-center justify-between">
+                                <PopoverTrigger
+                                    type="button"
+                                    className="text-foreground/70 hover:bg-muted hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-full transition-colors outline-none"
+                                    title={`Save location: ${downloadDir || 'Default'}`}
+                                    aria-label="Select save location"
+                                >
+                                    <Plus className="size-4" />
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    sideOffset={12}
+                                    className="w-64 space-y-2.5 p-3.5"
+                                >
+                                    {/* Title header with Reset icon button on right */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Folder className="text-muted-foreground size-4 shrink-0" />
+                                            <span className="text-foreground text-[11px] font-semibold tracking-wider uppercase">
+                                                Save Location
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleResetDirectory}
+                                            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6.5 items-center justify-center rounded-md transition-colors outline-none"
+                                            title="Reset to default location"
+                                            aria-label="Reset save location"
+                                        >
+                                            <RefreshCw className="size-3.5" />
+                                        </button>
+                                    </div>
+
+                                    {/* Location row with Change Folder icon button on right */}
                                     <div className="flex items-center gap-2">
-                                        <Folder className="text-muted-foreground size-4 shrink-0" />
-                                        <span className="text-foreground text-[11px] font-semibold tracking-wider uppercase">
-                                            Save Location
-                                        </span>
+                                        <div
+                                            className="bg-muted/50 border-border/40 text-foreground/80 min-w-0 flex-1 truncate rounded-xl border px-3 py-2 font-mono text-[11px]"
+                                            title={
+                                                downloadDir ||
+                                                'Downloads Folder'
+                                            }
+                                        >
+                                            {downloadDir || 'Downloads Folder'}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleBrowseDirectory}
+                                            className="border-border/60 bg-surface text-foreground hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-xl border transition-colors outline-none"
+                                            title="Change folder"
+                                            aria-label="Change save folder"
+                                        >
+                                            <FolderOpen className="size-4" />
+                                        </button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleResetDirectory}
-                                        className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6.5 items-center justify-center rounded-md transition-colors outline-none"
-                                        title="Reset to default location"
-                                        aria-label="Reset save location"
-                                    >
-                                        <RefreshCw className="size-3.5" />
-                                    </button>
-                                </div>
+                                </PopoverContent>
+                            </Popover>
 
-                                {/* Location row with Change Folder icon button on right */}
-                                <div className="flex items-center gap-2">
-                                    <div
-                                        className="bg-muted/50 border-border/40 text-foreground/80 min-w-0 flex-1 truncate rounded-xl border px-3 py-2 font-mono text-[11px]"
-                                        title={
-                                            downloadDir || 'Downloads Folder'
-                                        }
-                                    >
-                                        {downloadDir || 'Downloads Folder'}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleBrowseDirectory}
-                                        className="border-border/60 bg-surface text-foreground hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-xl border transition-colors outline-none"
-                                        title="Change folder"
-                                        aria-label="Change save folder"
-                                    >
-                                        <FolderOpen className="size-4" />
-                                    </button>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
+                            {/* Main Input with requested placeholder */}
+                            <input
+                                type="url"
+                                placeholder="Paste YouTube channel or video link"
+                                value={url}
+                                onChange={handleUrlChange}
+                                onKeyDown={(e) => {
+                                    if (
+                                        e.key === 'Enter' &&
+                                        url.trim() &&
+                                        !loadingInfo &&
+                                        !isDownloading &&
+                                        !isDownloadingChannel
+                                    ) {
+                                        handleFetchInfo(url)
+                                    }
+                                }}
+                                disabled={isDownloading || isDownloadingChannel}
+                                className="text-foreground placeholder:text-muted-foreground/60 flex-1 border-none bg-transparent px-1 text-sm outline-none focus:ring-0 focus:outline-none"
+                            />
 
-                        {/* Main Input with requested placeholder */}
-                        <input
-                            type="url"
-                            placeholder="Paste YouTube channel or video link"
-                            value={url}
-                            onChange={handleUrlChange}
-                            onKeyDown={(e) => {
-                                if (
-                                    e.key === 'Enter' &&
-                                    url.trim() &&
-                                    !loadingInfo &&
-                                    !isDownloading &&
-                                    !isDownloadingChannel
-                                ) {
-                                    handleFetchInfo(url)
+                            {/* Fetch / Submit icon in circular button */}
+                            <button
+                                type="button"
+                                onClick={() => handleFetchInfo(url)}
+                                disabled={
+                                    !url.trim() ||
+                                    isDownloading ||
+                                    isDownloadingChannel ||
+                                    loadingInfo
                                 }
-                            }}
-                            disabled={isDownloading || isDownloadingChannel}
-                            className="text-foreground placeholder:text-muted-foreground/60 flex-1 border-none bg-transparent px-1 text-sm outline-none focus:ring-0 focus:outline-none"
-                        />
-
-                        {/* Fetch / Submit icon in circular button */}
-                        <button
-                            type="button"
-                            onClick={() => handleFetchInfo(url)}
-                            disabled={
-                                !url.trim() ||
-                                isDownloading ||
-                                isDownloadingChannel ||
-                                loadingInfo
-                            }
-                            className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-full transition-all hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-30"
-                            title="Fetch Info"
-                        >
-                            {loadingInfo ? (
-                                <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                                <Send className="size-4" />
-                            )}
-                        </button>
+                                className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-full transition-all hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-30"
+                                title="Fetch Info"
+                            >
+                                {loadingInfo ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                    <Send className="size-4" />
+                                )}
+                            </button>
+                        </div>
                     </div>
+                    {/* Floating gradient transition below search bar */}
+                    <div className="pointer-events-none absolute top-full left-0 right-0 h-4 bg-linear-to-b from-white to-white/0" />
                 </div>
 
                 {/* Error Notification */}
@@ -491,11 +496,11 @@ export function YoutubeDownloader() {
                         url.includes('/c/') ||
                         url.includes('/user/') ||
                         url.includes('list=') ? (
-                            <div className="w-full space-y-4 pt-2">
+                            <div className="w-full space-y-4">
                                 {/* Channel Header Skeleton */}
-                                <div className="flex items-center justify-between px-0 py-1 animate-pulse">
-                                    <div className="bg-zinc-300/50 dark:bg-zinc-700/50 h-5 w-40 rounded-md" />
-                                    <div className="bg-zinc-300/50 dark:bg-zinc-700/50 h-8 w-28 rounded-full" />
+                                <div className="flex animate-pulse items-center justify-between px-0 py-1">
+                                    <div className="h-5 w-40 rounded-md bg-zinc-300/50 dark:bg-zinc-700/50" />
+                                    <div className="h-8 w-28 rounded-full bg-zinc-300/50 dark:bg-zinc-700/50" />
                                 </div>
 
                                 {/* 2-Column Grid (2 videos in a row pulsing cards) */}
@@ -505,10 +510,10 @@ export function YoutubeDownloader() {
                                             key={i}
                                             className="w-full animate-pulse space-y-2.5"
                                         >
-                                            <div className="bg-zinc-300/50 dark:bg-zinc-700/50 aspect-video w-full rounded-xl" />
+                                            <div className="aspect-video w-full rounded-xl bg-zinc-300/50 dark:bg-zinc-700/50" />
                                             <div className="space-y-1.5 px-0.5">
-                                                <div className="bg-zinc-300/50 dark:bg-zinc-700/50 h-4 w-4/5 rounded-md" />
-                                                <div className="bg-zinc-300/35 dark:bg-zinc-700/35 h-3 w-1/3 rounded-md" />
+                                                <div className="h-4 w-4/5 rounded-md bg-zinc-300/50 dark:bg-zinc-700/50" />
+                                                <div className="h-3 w-1/3 rounded-md bg-zinc-300/35 dark:bg-zinc-700/35" />
                                             </div>
                                         </div>
                                     ))}
@@ -516,10 +521,10 @@ export function YoutubeDownloader() {
                             </div>
                         ) : (
                             <div className="mx-auto w-full max-w-xl animate-pulse space-y-3 pt-2">
-                                <div className="bg-zinc-300/50 dark:bg-zinc-700/50 aspect-video w-full rounded-2xl" />
+                                <div className="aspect-video w-full rounded-2xl bg-zinc-300/50 dark:bg-zinc-700/50" />
                                 <div className="space-y-2 px-0.5">
-                                    <div className="bg-zinc-300/50 dark:bg-zinc-700/50 h-4.5 w-4/5 rounded-md" />
-                                    <div className="bg-zinc-300/35 dark:bg-zinc-700/35 h-3.5 w-1/3 rounded-md" />
+                                    <div className="h-4.5 w-4/5 rounded-md bg-zinc-300/50 dark:bg-zinc-700/50" />
+                                    <div className="h-3.5 w-1/3 rounded-md bg-zinc-300/35 dark:bg-zinc-700/35" />
                                 </div>
                             </div>
                         )}
@@ -543,7 +548,7 @@ export function YoutubeDownloader() {
 
                 {/* YouTube Channel View (Header + 2 videos in a row grid + Infinite Scroll) */}
                 {urlType === 'channel' && channelInfo && !loadingInfo && (
-                    <div className="w-full space-y-4 pt-2">
+                    <div className="w-full space-y-4">
                         {/* Channel Options Header (No borders, no shadows, no inner side paddings) */}
                         <div className="flex items-center justify-between px-0 py-1">
                             {/* Left side: Channel Name (shorter) */}
