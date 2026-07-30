@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import type { FileHandle } from 'node:fs/promises'
 
 import { app, dialog, shell } from 'electron'
+import { existsSync } from 'node:fs'
 import { open, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -131,6 +132,25 @@ export async function closeAllWriteStreams(): Promise<void> {
     await Promise.all(open.map((id) => closeWriteStream(id, true)))
 }
 
-export function revealInFolder(filePath: string): void {
+export function revealInFolder(filePath: string): boolean {
+    if (!existsSync(filePath)) {
+        return false
+    }
     shell.showItemInFolder(filePath)
+    return true
+}
+
+export async function deletePartialFile(filePath: string): Promise<void> {
+    if (!filePath) return
+    const candidates = [
+        filePath,
+        filePath + '.part',
+        filePath + '.ytdl',
+        filePath.replace(/\.[^/.]+$/, '.part'),
+    ]
+    for (const c of candidates) {
+        if (existsSync(c)) {
+            await rm(c, { force: true }).catch(() => undefined)
+        }
+    }
 }

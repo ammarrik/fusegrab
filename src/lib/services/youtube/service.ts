@@ -95,11 +95,12 @@ export async function getYoutubeUrlType(
 }
 
 export async function getYoutubeChannelPage(
+    win: BrowserWindow | null,
     url: string,
     page = 1,
-    limit = 10,
+    limit = 20,
 ): Promise<YoutubeChannelInfo> {
-    return getChannelPageImpl(url, page, limit)
+    return getChannelPageImpl(win, url, page, limit)
 }
 
 export async function getYoutubeVideoInfo(

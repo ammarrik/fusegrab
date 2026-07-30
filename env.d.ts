@@ -52,6 +52,22 @@ declare global {
                 onChannelProgress: (
                     cb: (progress: ChannelProgressEvent) => void,
                 ) => () => void
+                onChannelVideoBatch: (
+                    cb: (batch: {
+                        channelUrl: string
+                        channelTitle: string
+                        videos: Array<{
+                            id: string
+                            title: string
+                            url: string
+                            thumbnail?: string
+                            durationSeconds?: number
+                            author?: string
+                        }>
+                        isFirstBatch: boolean
+                        isDone: boolean
+                    }) => void,
+                ) => () => void
             }
         }
         files: {
@@ -73,7 +89,8 @@ declare global {
                 id: number,
                 discard?: boolean,
             ) => Promise<{ filePath: string; size: number } | null>
-            reveal: (filePath: string) => Promise<void>
+            reveal: (filePath: string) => Promise<boolean>
+            deletePartialFile: (filePath: string) => Promise<void>
         }
         windowControls: {
             platform: NodeJS.Platform

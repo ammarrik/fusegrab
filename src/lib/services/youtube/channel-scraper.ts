@@ -1,7 +1,13 @@
 import type { YoutubeChannelVideoItem } from './types'
 
 function toChannelVideosUrl(raw: string): string {
-    if (raw.includes('list=')) return raw
+    if (raw.includes('list=')) {
+        const match = raw.match(/list=([a-zA-Z0-9_-]+)/)
+        if (match) {
+            return `https://www.youtube.com/playlist?list=${match[1]}`
+        }
+        return raw
+    }
     const base = raw
         .replace(
             /\/(videos|shorts|streams|playlists|community|about|channels)\s*$/i,
@@ -20,9 +26,246 @@ function parseDurationText(text: string): number {
     return parts[0] || 0
 }
 
+export interface ChannelBatchEvent {
+    channelUrl: string
+    channelTitle: string
+    videos: YoutubeChannelVideoItem[]
+    isFirstBatch: boolean
+    isDone: boolean
+}
+
+const EXTRACT_SCRIPT = `
+    (() => {
+        const isPlaylist = window.location.href.includes('list=') || !!document.querySelector('ytd-playlist-video-list-renderer');
+
+        const channelTitle = (
+            isPlaylist
+                ? (
+                    document.querySelector('ytd-playlist-header-renderer #text.ytd-channel-name')?.textContent ||
+                    document.querySelector('ytd-playlist-header-renderer h1')?.textContent ||
+                    document.querySelector('h1#title')?.textContent ||
+                    document.querySelector('yt-dynamic-sizing-formatted-string#text')?.textContent ||
+                    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+                    ''
+                  )
+                : (
+                    document.querySelector('yt-dynamic-sizing-formatted-string#text')?.textContent ||
+                    document.querySelector('h1#title')?.textContent ||
+                    document.querySelector('yt-formatted-string#text.ytd-channel-name')?.textContent ||
+                    document.querySelector('#channel-name yt-formatted-string')?.textContent ||
+                    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+                    ''
+                  )
+        ).trim();
+
+        const videos = [];
+        const seen = new Set();
+
+        let rawItems = [];
+        if (isPlaylist) {
+            // STRICTLY query ytd-playlist-video-renderer inside playlist container to avoid recommended sidebar items
+            rawItems = Array.from(document.querySelectorAll(
+                'ytd-playlist-video-list-renderer ytd-playlist-video-renderer, #contents.ytd-playlist-video-list-renderer ytd-playlist-video-renderer, ytd-playlist-video-renderer'
+            ));
+        } else {
+            // Channel videos container
+            rawItems = Array.from(document.querySelectorAll(
+                '#contents.ytd-rich-grid-renderer ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-rich-item-renderer'
+            ));
+        }
+
+        rawItems.forEach(item => {
+            try {
+                const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
+                if (!link) return;
+                const href = link.getAttribute('href') || link.href || '';
+                const match = href.match(/(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/);
+                if (!match) return;
+                const videoId = match[1];
+                if (seen.has(videoId)) return;
+
+                let title = '';
+                const titleEl = item.querySelector('#video-title, #video-title-link, a#video-title, yt-formatted-string#video-title');
+                if (titleEl) {
+                    title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+                }
+                if (!title) {
+                    title = (link.getAttribute('title') || link.textContent || '').trim();
+                }
+
+                if (
+                    !title ||
+                    title.length < 2 ||
+                    title.toLowerCase().includes(' - videos') ||
+                    title.toLowerCase().includes(' - shorts') ||
+                    /^(\\d+:\\d+|\\d+:\\d+:\\d+)$/.test(title)
+                ) return;
+
+                seen.add(videoId);
+
+                let thumbnail = '';
+                const thumbEl = item.querySelector('ytd-thumbnail img, img#img, img.yt-core-image');
+                if (thumbEl) {
+                    thumbnail = thumbEl.src || thumbEl.getAttribute('src') || '';
+                }
+                if (!thumbnail || thumbnail.startsWith('data:')) {
+                    thumbnail = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
+                }
+
+                const durationEl = item.querySelector(
+                    'ytd-thumbnail-overlay-time-status-renderer #text,' +
+                    'ytd-thumbnail-overlay-time-status-renderer span, badge-shape .badge-shape-wiz__text,' +
+                    'span.ytd-thumbnail-overlay-time-status-renderer'
+                );
+                const durationText = (durationEl?.textContent || '').trim();
+
+                const authorEl = item.querySelector(
+                    'ytd-channel-name #text a, ytd-channel-name a, #byline a, #owner-name a, #channel-name a'
+                );
+                const author = (authorEl?.textContent || channelTitle || 'YouTube').trim();
+
+                videos.push({
+                    id: videoId,
+                    title: title || 'Untitled Video',
+                    url: 'https://www.youtube.com/watch?v=' + videoId,
+                    thumbnail,
+                    durationText,
+                    author,
+                });
+            } catch {}
+        });
+
+        // Method 2: Fallback ONLY for channel pages (NOT playlists)
+        if (!isPlaylist && videos.length === 0) {
+            const links = Array.from(document.querySelectorAll('a[href*="watch?v="]'));
+            links.forEach(link => {
+                try {
+                    const href = link.getAttribute('href') || link.href || '';
+                    const match = href.match(/watch\\?v=([a-zA-Z0-9_-]{11})/);
+                    if (!match) return;
+                    const videoId = match[1];
+                    if (seen.has(videoId)) return;
+
+                    const title = (link.getAttribute('title') || link.textContent || '').trim();
+                    if (!title || title.length < 2 || /^(\\d+:\\d+|\\d+:\\d+:\\d+)$/.test(title)) return;
+
+                    seen.add(videoId);
+                    videos.push({
+                        id: videoId,
+                        title: title || 'Untitled Video',
+                        url: 'https://www.youtube.com/watch?v=' + videoId,
+                        thumbnail: 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg',
+                        durationText: '',
+                        author: channelTitle || 'YouTube',
+                    });
+                } catch {}
+            });
+        }
+
+        return { channelTitle, videos };
+    })();
+`
+
+async function runBackgroundScrolling(
+    win: any,
+    url: string,
+    channelTitle: string,
+    targetNeeded: number,
+    seenIds: Set<string>,
+    initialCount: number,
+    onBatch?: (event: ChannelBatchEvent) => void,
+) {
+    try {
+        let scrollAttempts = 0
+        let staleCount = 0
+        let totalCount = initialCount
+        let reachedEnd = false
+
+        while (scrollAttempts < 100 && totalCount < targetNeeded && !reachedEnd) {
+            scrollAttempts++
+            await win.webContents.executeJavaScript(`
+                (() => {
+                    const isPlaylist = window.location.href.includes('list=');
+                    if (isPlaylist) {
+                        const playlistContinuation = document.querySelector(
+                            'ytd-playlist-video-list-renderer ytd-continuation-item-renderer, #contents.ytd-playlist-video-list-renderer ytd-continuation-item-renderer'
+                        );
+                        if (playlistContinuation) {
+                            playlistContinuation.scrollIntoView({ behavior: 'instant', block: 'center' });
+                        } else {
+                            window.scrollTo(0, 999999);
+                        }
+                    } else {
+                        const continuation = document.querySelector(
+                            'ytd-continuation-item-renderer, tp-yt-paper-spinner'
+                        );
+                        if (continuation) {
+                            continuation.scrollIntoView({ behavior: 'instant', block: 'center' });
+                        }
+                        window.scrollTo(0, 999999);
+                    }
+                    window.dispatchEvent(new Event('scroll', { bubbles: true }));
+                })();
+            `)
+
+            await new Promise((res) => setTimeout(res, 1200))
+
+            const scraped = await win.webContents.executeJavaScript(EXTRACT_SCRIPT)
+            const currentTitle = scraped?.channelTitle || channelTitle
+            const currentRaw: any[] = scraped?.videos || []
+            const newBatch: YoutubeChannelVideoItem[] = []
+
+            for (const v of currentRaw) {
+                if (!seenIds.has(v.id)) {
+                    seenIds.add(v.id)
+                    const parsed: YoutubeChannelVideoItem = {
+                        id: v.id,
+                        title: v.title,
+                        url: v.url,
+                        thumbnail: v.thumbnail,
+                        durationSeconds: parseDurationText(v.durationText || ''),
+                        author: v.author,
+                    }
+                    newBatch.push(parsed)
+                    totalCount++
+                }
+            }
+
+            if (newBatch.length > 0) {
+                staleCount = 0
+                onBatch?.({
+                    channelUrl: url,
+                    channelTitle: currentTitle,
+                    videos: newBatch,
+                    isFirstBatch: false,
+                    isDone: false,
+                })
+            } else {
+                staleCount++
+                if (staleCount >= 4) {
+                    reachedEnd = true
+                }
+            }
+        }
+    } catch {
+    } finally {
+        onBatch?.({
+            channelUrl: url,
+            channelTitle,
+            videos: [],
+            isFirstBatch: false,
+            isDone: true,
+        })
+        try {
+            win.destroy()
+        } catch {}
+    }
+}
+
 export async function scrapeChannelWithBrowser(
     url: string,
     targetNeeded: number,
+    onBatch?: (event: ChannelBatchEvent) => void,
 ): Promise<{
     channelTitle: string
     videos: YoutubeChannelVideoItem[]
@@ -31,6 +274,24 @@ export async function scrapeChannelWithBrowser(
     const { BrowserWindow, session } = await import('electron')
     const targetUrl = toChannelVideosUrl(url)
     const ses = session.fromPartition('persist:yt-scraper')
+
+    // Pre-inject YouTube consent cookies to bypass popups instantly
+    try {
+        await ses.cookies.set({
+            url: 'https://www.youtube.com',
+            name: 'SOCS',
+            value: 'CAESEwgDEgk2OTk4OTU1NjEaAmVuIAEaBgiA_K-1Bg',
+            domain: '.youtube.com',
+            path: '/',
+        })
+        await ses.cookies.set({
+            url: 'https://www.youtube.com',
+            name: 'CONSENT',
+            value: 'YES+1',
+            domain: '.youtube.com',
+            path: '/',
+        })
+    } catch {}
 
     const win = new BrowserWindow({
         show: false,
@@ -52,43 +313,21 @@ export async function scrapeChannelWithBrowser(
     try {
         await win.loadURL(targetUrl)
 
-        await win.webContents.executeJavaScript(`
-            new Promise((resolve) => {
-                const dismiss = () => {
-                    const consentBtn =
-                        document.querySelector('button[aria-label*="Accept"], button[aria-label*="accept"], tp-yt-paper-button[aria-label*="Accept"]') ||
-                        document.querySelector('form[action*="consent"] button') ||
-                        document.querySelector('[class*="consent"] button:last-child') ||
-                        document.querySelector('ytd-consent-bump-v2-lightbox button.yt-spec-button-shape-next--filled');
-                    if (consentBtn) {
-                        consentBtn.click();
-                        setTimeout(resolve, 2000);
-                    } else {
-                        resolve(true);
-                    }
-                };
-                setTimeout(dismiss, 1500);
-            });
-        `)
-
         const hasVideos = await win.webContents.executeJavaScript(`
             new Promise((resolve) => {
                 let attempts = 0;
                 const check = () => {
-                    const items = Array.from(document.querySelectorAll(
-                        'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
-                    )).filter(item => {
-                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
-                        if (!link) return false;
-                        const href = link.getAttribute('href') || link.href || '';
+                    const links = Array.from(document.querySelectorAll('a[href*="watch?v="]'));
+                    const valid = links.some(a => {
+                        const href = a.getAttribute('href') || a.href || '';
                         return /(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/.test(href);
                     });
 
-                    if (items.length > 0) {
+                    if (valid) {
                         resolve(true);
                         return;
                     }
-                    if (attempts > 60) {
+                    if (attempts > 24) {
                         resolve(false);
                         return;
                     }
@@ -99,157 +338,66 @@ export async function scrapeChannelWithBrowser(
             });
         `)
 
-        if (!hasVideos) return null
-
-        const scrollResult = await win.webContents.executeJavaScript(`
-            new Promise((resolve) => {
-                const totalNeeded = ${targetNeeded};
-                let lastCount = 0;
-                let stale = 0;
-                let scrollAttempts = 0;
-
-                const doScroll = () => {
-                    const items = Array.from(document.querySelectorAll(
-                        'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
-                    )).filter(item => {
-                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
-                        if (!link) return false;
-                        const href = link.getAttribute('href') || link.href || '';
-                        return /(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/.test(href);
-                    });
-                    const count = items.length;
-
-                    if (count >= totalNeeded) {
-                        resolve({ count, reachedEnd: false });
-                        return;
-                    }
-
-                    if (scrollAttempts >= 60) {
-                        resolve({ count, reachedEnd: false });
-                        return;
-                    }
-
-                    if (count === lastCount) {
-                        stale++;
-                        if (stale >= 5) {
-                            resolve({ count, reachedEnd: true });
-                            return;
-                        }
-                    } else {
-                        stale = 0;
-                        lastCount = count;
-                    }
-
-                    scrollAttempts++;
-
-                    const continuation = document.querySelector(
-                        'ytd-continuation-item-renderer, tp-yt-paper-spinner'
-                    );
-                    if (continuation) {
-                        continuation.scrollIntoView({ behavior: 'instant', block: 'center' });
-                    }
-                    window.scrollTo(0, 999999);
-                    window.dispatchEvent(new Event('scroll', { bubbles: true }));
-
-                    setTimeout(doScroll, 1200);
-                };
-
-                setTimeout(doScroll, 800);
-            });
-        `)
-
-        const scraped = await win.webContents.executeJavaScript(`
-            (() => {
-                const channelTitle = (
-                    document.querySelector('yt-formatted-string#text.ytd-channel-name')?.textContent ||
-                    document.querySelector('#channel-name yt-formatted-string')?.textContent ||
-                    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-                    ''
-                ).trim();
-
-                const rawItems = Array.from(document.querySelectorAll(
-                    'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ytd-playlist-video-renderer'
-                ));
-
-                const videos = [];
-                const seen = new Set();
-
-                rawItems.forEach(item => {
-                    try {
-                        const link = item.querySelector('a[href*="watch?v="], a[href*="/shorts/"]');
-                        if (!link) return;
-                        const href = link.getAttribute('href') || link.href || '';
-                        const match = href.match(/(?:watch\\?v=|\\/shorts\\/)([a-zA-Z0-9_-]{11})/);
-                        if (!match) return;
-                        const videoId = match[1];
-                        if (seen.has(videoId)) return;
-
-                        const titleEl = item.querySelector('#video-title-link, #video-title, h3, yt-formatted-string#video-title') || link;
-                        const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
-                        if (!title || title.toLowerCase().includes(' - videos') || title.toLowerCase().includes(' - shorts')) return;
-
-                        seen.add(videoId);
-
-                        let thumbnail = '';
-                        const thumbEl = item.querySelector('ytd-thumbnail img, img#img, img.yt-core-image');
-                        if (thumbEl) {
-                            thumbnail = thumbEl.src || thumbEl.getAttribute('src') || '';
-                        }
-                        if (!thumbnail || thumbnail.startsWith('data:')) {
-                            thumbnail = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
-                        }
-
-                        const durationEl = item.querySelector(
-                            'ytd-thumbnail-overlay-time-status-renderer #text,' +
-                            'ytd-thumbnail-overlay-time-status-renderer span, badge-shape .badge-shape-wiz__text'
-                        );
-                        const durationText = (durationEl?.textContent || '').trim();
-
-                        const authorEl = item.querySelector('ytd-channel-name #text a, ytd-channel-name a');
-                        const author = (authorEl?.textContent || channelTitle || 'YouTube').trim();
-
-                        videos.push({
-                            id: videoId,
-                            title: title || 'Untitled Video',
-                            url: 'https://www.youtube.com/watch?v=' + videoId,
-                            thumbnail,
-                            durationText,
-                            author,
-                        });
-                    } catch {}
-                });
-
-                return { channelTitle, videos };
-            })();
-        `)
-
-        if (!scraped || !Array.isArray(scraped.videos) || scraped.videos.length === 0) {
+        if (!hasVideos) {
+            try {
+                win.destroy()
+            } catch {}
             return null
         }
 
-        const allVideos: YoutubeChannelVideoItem[] = scraped.videos.map(
-            (v: any) => ({
-                id: v.id,
-                title: v.title,
-                url: v.url,
-                thumbnail: v.thumbnail,
-                durationSeconds: parseDurationText(v.durationText || ''),
-                author: v.author,
-            }),
+        const scraped = await win.webContents.executeJavaScript(EXTRACT_SCRIPT)
+        const channelTitle = scraped?.channelTitle || 'YouTube Playlist'
+        const seenIds = new Set<string>()
+        const firstBatch: YoutubeChannelVideoItem[] = []
+
+        if (scraped && Array.isArray(scraped.videos) && scraped.videos.length > 0) {
+            for (const v of scraped.videos) {
+                seenIds.add(v.id)
+                firstBatch.push({
+                    id: v.id,
+                    title: v.title,
+                    url: v.url,
+                    thumbnail: v.thumbnail,
+                    durationSeconds: parseDurationText(v.durationText || ''),
+                    author: v.author,
+                })
+            }
+            onBatch?.({
+                channelUrl: url,
+                channelTitle,
+                videos: firstBatch,
+                isFirstBatch: true,
+                isDone: false,
+            })
+        }
+
+        if (firstBatch.length === 0) {
+            try {
+                win.destroy()
+            } catch {}
+            return null
+        }
+
+        // Launch background scrolling non-blocking
+        runBackgroundScrolling(
+            win,
+            url,
+            channelTitle,
+            targetNeeded,
+            seenIds,
+            firstBatch.length,
+            onBatch,
         )
 
-        const reachedEnd = scrollResult?.reachedEnd ?? false
-
         return {
-            channelTitle: scraped.channelTitle || 'YouTube Channel',
-            videos: allVideos,
-            hasMore: !reachedEnd,
+            channelTitle,
+            videos: firstBatch,
+            hasMore: true,
         }
     } catch {
-        return null
-    } finally {
         try {
             win.destroy()
         } catch {}
+        return null
     }
 }

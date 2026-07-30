@@ -29,7 +29,8 @@ export async function getYoutubeVideoInfo(
             ytDlpPath,
             [
                 ...antiRateLimitArgs,
-                '--dump-json',
+                '--no-playlist',
+                '--dump-single-json',
                 '--js-runtimes',
                 'node',
                 cleanUrl,

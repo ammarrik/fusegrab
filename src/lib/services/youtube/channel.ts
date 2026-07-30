@@ -80,20 +80,13 @@ export async function getYoutubeUrlType(
     return 'video'
 }
 
-interface ChannelCache {
-    channelTitle: string
-    videos: YoutubeChannelVideoItem[]
-    hasMore: boolean
-    timestamp: number
-}
 
-const channelVideoCache = new Map<string, ChannelCache>()
-const CACHE_TTL_MS = 5 * 60 * 1000
 
 export async function getYoutubeChannelPage(
+    win: BrowserWindow | null,
     url: string,
     page = 1,
-    limit = 10,
+    limit = 20,
 ): Promise<YoutubeChannelInfo> {
     const cleanUrl = url.trim()
     if (!cleanUrl) {
@@ -101,49 +94,42 @@ export async function getYoutubeChannelPage(
     }
 
     const skipCount = (page - 1) * limit
-    const targetNeeded = Math.max((page + 4) * limit, 50)
+    const targetNeeded = 500
 
-    const now = Date.now()
-    let cached = channelVideoCache.get(cleanUrl)
-    if (cached && now - cached.timestamp > CACHE_TTL_MS) {
-        channelVideoCache.delete(cleanUrl)
-        cached = undefined
-    }
-
-    if (
-        !cached ||
-        (cached.videos.length < skipCount + limit && cached.hasMore)
-    ) {
-        const result = await scrapeChannelWithBrowser(cleanUrl, targetNeeded)
-        if (result && result.videos.length > 0) {
-            cached = {
-                channelTitle: result.channelTitle,
-                videos: result.videos,
-                hasMore: result.hasMore,
-                timestamp: Date.now(),
+    const result = await scrapeChannelWithBrowser(
+        cleanUrl,
+        targetNeeded,
+        (batch) => {
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('youtube:channel-video-batch', batch)
             }
-            channelVideoCache.set(cleanUrl, cached)
-        }
-    }
+        },
+    )
 
-    if (cached && cached.videos.length > 0) {
-        const pageVideos = cached.videos.slice(skipCount, skipCount + limit)
-        const hasMore =
-            pageVideos.length > 0 &&
-            (cached.hasMore || cached.videos.length > skipCount + limit)
-
+    if (result && result.videos.length > 0) {
+        const pageVideos = result.videos.slice(skipCount, skipCount + limit)
         return {
             id: cleanUrl,
-            title: cached.channelTitle || 'YouTube Channel',
-            author: cached.channelTitle || 'YouTube',
-            totalVideos: cached.videos.length,
+            title: result.channelTitle || 'YouTube Channel',
+            author: result.channelTitle || 'YouTube',
+            totalVideos: result.videos.length,
             videos: pageVideos,
-            hasMore,
+            hasMore: result.hasMore,
             nextPage: page + 1,
         }
     }
 
-    return getChannelPageViaYtDlp(cleanUrl, page, limit)
+    const fallback = await getChannelPageViaYtDlp(cleanUrl, page, 500)
+    if (win && !win.isDestroyed() && fallback.videos.length > 0) {
+        win.webContents.send('youtube:channel-video-batch', {
+            channelUrl: cleanUrl,
+            channelTitle: fallback.title || 'YouTube Playlist',
+            videos: fallback.videos,
+            isFirstBatch: true,
+            isDone: true,
+        })
+    }
+    return fallback
 }
 
 async function getChannelPageViaYtDlp(

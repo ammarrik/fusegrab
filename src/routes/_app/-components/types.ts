@@ -6,7 +6,15 @@ export interface DownloadItem {
     channelName?: string
     quality?: string
     size: string
-    status: 'Complete' | 'Downloading' | 'Paused' | 'Error' | 'Queued'
+    status:
+        | 'Complete'
+        | 'Downloading'
+        | 'Paused'
+        | 'Error'
+        | 'Queued'
+        | 'Missing'
+        | 'Stopped'
+        | 'Ready'
     statusStage?: string
     percent: number
     timeLeft: string
@@ -27,16 +35,22 @@ export function formatDate(date: Date): string {
 }
 
 export function getStatusText(item: DownloadItem): string {
-    if (item.statusStage) return item.statusStage
-    if (item.status === 'Queued') return 'Queued'
     if (item.status === 'Complete') return 'Complete'
-    if (item.status === 'Error') return 'Error'
+    if (item.status === 'Queued') return 'Queued'
+    if (item.status === 'Ready') return 'Ready'
+    if (item.status === 'Missing') return 'Missing'
+    if (item.status === 'Error') return item.statusStage || 'Error'
     if (item.status === 'Paused') return 'Paused'
+    if (item.status === 'Stopped') return 'Stopped'
+
     if (item.status === 'Downloading') {
+        if (item.statusStage) return item.statusStage
         if (!item.percent || item.percent <= 0) return 'Preparing...'
         if (item.percent >= 99 && item.percent < 100)
             return 'Combining parts...'
         return `${Math.round(item.percent)}%`
     }
+
+    if (item.statusStage) return item.statusStage
     return item.status
 }

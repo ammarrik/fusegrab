@@ -9,6 +9,7 @@ import {
     chooseSavePath,
     closeAllWriteStreams,
     closeWriteStream,
+    deletePartialFile,
     getDefaultDownloadDir,
     openWriteStream,
     revealInFolder,
@@ -223,6 +224,9 @@ handle('files:close-write', (_event, id: number, discard: boolean) =>
     closeWriteStream(id, discard),
 )
 handle('files:reveal', (_event, filePath: string) => revealInFolder(filePath))
+handle('files:delete-partial', (_event, filePath: string) =>
+    deletePartialFile(filePath),
+)
 
 handle('updater:get-state', () => getUpdateState())
 handle('updater:check', () => checkForUpdate())
@@ -234,8 +238,13 @@ handle('youtube:get-info', (_event, url: string) => getYoutubeVideoInfo(url))
 handle('youtube:get-url-type', (_event, url: string) => getYoutubeUrlType(url))
 handle(
     'youtube:get-channel-page',
-    (_event, url: string, page?: number, limit?: number) =>
-        getYoutubeChannelPage(url, page, limit),
+    (event, url: string, page?: number, limit?: number) =>
+        getYoutubeChannelPage(
+            BrowserWindow.fromWebContents(event.sender),
+            url,
+            page,
+            limit,
+        ),
 )
 handle('youtube:download', (event, options) =>
     downloadYoutubeVideo(BrowserWindow.fromWebContents(event.sender), options),

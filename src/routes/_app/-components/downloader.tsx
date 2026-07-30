@@ -7,7 +7,14 @@ import { InputField, InputIcon, InputRoot } from '#/components/ui/input'
 import { useWindowDrag } from '#/hooks/use-window-drag'
 
 import { AddUrlModal } from './add-dialog'
+import { FileMissingDialog } from './file-missing-dialog'
 import { DownloaderFooter } from './footer'
+import {
+    deleteItemById,
+    deleteSelectedItems,
+    pauseSelectedItems,
+    stopItemById,
+} from './handlers'
 import { DownloadOptionsModal } from './options-dialog'
 import { DownloaderSidebar } from './sidebar'
 import { DownloaderTable } from './table'
@@ -43,6 +50,24 @@ export function YoutubeDownloader() {
     const [downloadDir, setDownloadDir] = useState<string>('')
     const [isDownloading, setIsDownloading] = useState(false)
     const [activeItemUrl, setActiveItemUrl] = useState<string | null>(null)
+    const [missingFileItem, setMissingFileItem] = useState<DownloadItem | null>(null)
+    const [isFetchingVideos, setIsFetchingVideos] = useState(false)
+    const [fetchingTitle, setFetchingTitle] = useState('')
+    const [defaultQuality, setDefaultQuality] = useState<string>(() => {
+        return localStorage.getItem('yt_default_quality') || 'Best'
+    })
+
+    const handleDefaultQualityChange = (quality: string) => {
+        setDefaultQuality(quality)
+        localStorage.setItem('yt_default_quality', quality)
+        setItems((prev) =>
+            prev.map((i) =>
+                i.status !== 'Complete' && i.status !== 'Downloading'
+                    ? { ...i, quality }
+                    : i,
+            ),
+        )
+    }
 
     useEffect(() => {
         localStorage.setItem('fuse_download_items_v2', JSON.stringify(items))
@@ -79,7 +104,7 @@ export function YoutubeDownloader() {
                             status: 'Downloading',
                             percent: data.percent,
                             statusStage:
-                                data.percent >= 99
+                                data.percent >= 99 && data.percent < 100
                                     ? 'Combining parts...'
                                     : undefined,
                         }
@@ -149,7 +174,7 @@ export function YoutubeDownloader() {
                     url: cleanUrl,
                     type: 'video',
                     channelName: info.author,
-                    quality: '720p',
+                    quality: defaultQuality || 'Best',
                     size: 'Calculating...',
                     status: 'Queued',
                     percent: 0,
@@ -159,148 +184,261 @@ export function YoutubeDownloader() {
                 }
                 setItems((prev) => [newItem, ...prev])
             } else if (type === 'channel') {
-                const info = await window.api.youtube.getInfo(cleanUrl)
-                const newItem: DownloadItem = {
-                    id: String(Date.now()),
-                    name: info.title || 'Channel Download',
-                    url: cleanUrl,
-                    type: 'channel',
-                    channelName: info.author || 'YouTube Channel',
-                    quality: '720p',
-                    size: `Channel`,
-                    status: 'Queued',
-                    percent: 0,
-                    timeLeft: '--',
-                    dateModified: formatDate(new Date()),
-                    selected: true,
-                }
-                setItems((prev) => [newItem, ...prev])
+                setIsFetchingVideos(true)
+                // Await initial batch loading before closing dialog
+                await window.api.youtube.getChannelPage(cleanUrl, 1, 20)
+                setInputUrl('')
+                setShowAddUrlModal(false)
+                return
             }
 
             setInputUrl('')
             setShowAddUrlModal(false)
         } catch (err: any) {
+            setIsFetchingVideos(false)
             setError(err?.message || 'Failed to fetch YouTube info')
         } finally {
             setLoadingInfo(false)
         }
     }
 
-    const handleStartSelectedDownloads = async (targetItemId?: string) => {
-        const selectedItems = items.filter((i) =>
-            targetItemId ? i.id === targetItemId : i.selected,
-        )
-        if (selectedItems.length === 0) return
+    useEffect(() => {
+        const offBatch = window.api.youtube.onChannelVideoBatch((batch) => {
+            if (!batch) return
 
+            if (batch.channelTitle) {
+                setFetchingTitle(batch.channelTitle)
+            }
+
+            if (batch.isDone) {
+                setIsFetchingVideos(false)
+                setFetchingTitle('')
+            } else {
+                setIsFetchingVideos(true)
+            }
+
+            if (!Array.isArray(batch.videos) || batch.videos.length === 0) return
+
+            setItems((prev) => {
+                const existingUrls = new Set(prev.map((i) => i.url))
+                const newItems: DownloadItem[] = []
+
+                for (const v of batch.videos) {
+                    if (!existingUrls.has(v.url)) {
+                        existingUrls.add(v.url)
+                        newItems.push({
+                            id: `${v.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                            name: v.title,
+                            url: v.url,
+                            type: 'video',
+                            channelName: v.author || batch.channelTitle,
+                            quality: defaultQuality || 'Best',
+                            size: 'Calculating...',
+                            status: 'Ready',
+                            percent: 0,
+                            timeLeft: '--',
+                            dateModified: formatDate(new Date()),
+                            selected: false,
+                        })
+                    }
+                }
+
+                if (newItems.length === 0) return prev
+                return [...prev, ...newItems]
+            })
+        })
+
+        return () => {
+            offBatch()
+        }
+    }, [])
+
+    useEffect(() => {
+        if (isDownloading) return
+
+        const queuedItem = items.find((i) => i.status === 'Queued')
+        if (queuedItem) {
+            setItems((prev) =>
+                prev.map((i) =>
+                    i.id === queuedItem.id
+                        ? {
+                              ...i,
+                              status: 'Downloading',
+                              percent: 0,
+                              statusStage: 'Preparing...',
+                          }
+                        : i,
+                ),
+            )
+            processDownloadItem(queuedItem)
+        }
+    }, [items, isDownloading])
+
+    const handleStartSelectedDownloads = (targetItemId?: string) => {
+        const eligible = items.filter((i) =>
+            targetItemId
+                ? i.id === targetItemId
+                : i.selected && i.status !== 'Complete',
+        )
+        if (eligible.length === 0) return
+
+        const firstItem = eligible[0]
+        const shouldStartFirstImmediately = !isDownloading
+
+        setItems((prev) =>
+            prev.map((i) => {
+                const isTarget = targetItemId
+                    ? i.id === targetItemId
+                    : i.selected && i.status !== 'Complete'
+
+                if (isTarget && i.status !== 'Downloading') {
+                    if (shouldStartFirstImmediately && i.id === firstItem.id) {
+                        return {
+                            ...i,
+                            status: 'Downloading',
+                            percent: 0,
+                            statusStage: 'Preparing...',
+                        }
+                    }
+                    return {
+                        ...i,
+                        status: 'Queued',
+                        statusStage: undefined,
+                    }
+                }
+                return i
+            }),
+        )
+
+        if (shouldStartFirstImmediately) {
+            processDownloadItem(firstItem)
+        }
+    }
+
+    const processDownloadItem = async (item: DownloadItem) => {
         let targetDir = downloadDir
         if (!targetDir) {
             targetDir = await window.files.getDefaultDownloadDir()
             setDownloadDir(targetDir)
         }
 
-        for (const item of selectedItems) {
-            if (item.status === 'Complete' && !targetItemId) continue
-
-            try {
-                setIsDownloading(true)
-                setActiveItemUrl(item.url)
-
-                setItems((prev) =>
-                    prev.map((i) =>
-                        i.id === item.id
-                            ? {
-                                  ...i,
-                                  status: 'Downloading',
-                                  percent: 0,
-                                  statusStage: 'Preparing...',
-                              }
-                            : i,
-                    ),
-                )
-
-                if (item.type === 'video') {
-                    const sanitized = sanitizeFilename(item.name)
-                    const savePath = `${targetDir.replace(/\/$/, '')}/${sanitized}.mp4`
-
-                    await window.api.youtube.download({
-                        url: item.url,
-                        savePath,
-                    })
-
-                    setItems((prev) =>
-                        prev.map((i) =>
-                            i.id === item.id
-                                ? {
-                                      ...i,
-                                      status: 'Complete',
-                                      percent: 100,
-                                      statusStage: undefined,
-                                      savePath,
-                                  }
-                                : i,
-                        ),
-                    )
-                } else if (item.type === 'channel') {
-                    const sanitized = sanitizeFilename(item.name)
-                    const saveDir = `${targetDir.replace(/\/$/, '')}/${sanitized}`
-
-                    await window.api.youtube.downloadChannel({
-                        channelUrl: item.url,
-                        saveDir,
-                    })
-
-                    setItems((prev) =>
-                        prev.map((i) =>
-                            i.id === item.id
-                                ? {
-                                      ...i,
-                                      status: 'Complete',
-                                      percent: 100,
-                                      statusStage: undefined,
-                                      savePath: saveDir,
-                                  }
-                                : i,
-                        ),
-                    )
-                }
-            } catch (err: any) {
-                setItems((prev) =>
-                    prev.map((i) =>
-                        i.id === item.id
-                            ? {
-                                  ...i,
-                                  status: 'Error',
-                                  statusStage:
-                                      err?.message || 'Download failed',
-                              }
-                            : i,
-                    ),
-                )
-            } finally {
-                setIsDownloading(false)
-                setActiveItemUrl(null)
-            }
-        }
-    }
-
-    const handleStopDownload = async () => {
         try {
-            await window.api.youtube.cancelDownload()
-            setIsDownloading(false)
-            setActiveItemUrl(null)
+            setIsDownloading(true)
+            setActiveItemUrl(item.url)
+
             setItems((prev) =>
                 prev.map((i) =>
-                    i.status === 'Downloading'
-                        ? { ...i, status: 'Paused', statusStage: undefined }
+                    i.id === item.id
+                        ? {
+                              ...i,
+                              status: 'Downloading',
+                              percent: i.percent || 0,
+                              statusStage:
+                                  i.percent && i.percent > 0
+                                      ? undefined
+                                      : 'Preparing...',
+                          }
                         : i,
                 ),
             )
-        } catch {}
+
+            if (item.type === 'video') {
+                const sanitized = sanitizeFilename(item.name)
+                const isAudio = item.quality?.toLowerCase().includes('audio')
+                const ext = isAudio ? 'mp3' : 'mp4'
+                const savePath = `${targetDir.replace(/\/$/, '')}/${sanitized}.${ext}`
+                const isBest =
+                    !item.quality ||
+                    item.quality === 'Best Quality' ||
+                    item.quality === 'Best'
+                const heightVal = isAudio
+                    ? -1
+                    : isBest
+                      ? undefined
+                      : (parseInt(item.quality || '', 10) || undefined)
+
+                await window.api.youtube.download({
+                    url: item.url,
+                    savePath,
+                    height: heightVal,
+                })
+
+                setItems((prev) =>
+                    prev.map((i) =>
+                        i.id === item.id
+                            ? {
+                                  ...i,
+                                  status: 'Complete',
+                                  percent: 100,
+                                  statusStage: undefined,
+                                  savePath,
+                              }
+                            : i,
+                    ),
+                )
+            } else if (item.type === 'channel') {
+                const sanitized = sanitizeFilename(item.name)
+                const saveDir = `${targetDir.replace(/\/$/, '')}/${sanitized}`
+
+                await window.api.youtube.downloadChannel({
+                    channelUrl: item.url,
+                    saveDir,
+                })
+
+                setItems((prev) =>
+                    prev.map((i) =>
+                        i.id === item.id
+                            ? {
+                                  ...i,
+                                  status: 'Complete',
+                                  percent: 100,
+                                  statusStage: undefined,
+                                  savePath: saveDir,
+                              }
+                            : i,
+                    ),
+                )
+            }
+        } catch (err: any) {
+            const msg = String(err?.message || '')
+            const isInterrupted =
+                msg.includes('Error invoking remote method') ||
+                msg.includes('SIGTERM') ||
+                msg.includes('code null') ||
+                msg.includes('code 143') ||
+                msg.includes('cancel') ||
+                msg.includes('aborted')
+
+            setItems((prev) =>
+                prev.map((i) =>
+                    i.id === item.id
+                        ? {
+                              ...i,
+                              status: isInterrupted ? 'Paused' : 'Error',
+                              statusStage: isInterrupted
+                                  ? undefined
+                                  : err?.message || 'Download failed',
+                          }
+                        : i,
+                ),
+            )
+        } finally {
+            setIsDownloading(false)
+            setActiveItemUrl(null)
+        }
     }
 
-    const handleDeleteSelected = () => {
-        setItems((prev) => prev.filter((i) => !i.selected))
-    }
+    const handlePauseSelected = () =>
+        pauseSelectedItems(items, setItems, setIsDownloading, setActiveItemUrl)
+
+    const handleStopItem = (id: string) =>
+        stopItemById(id, items, setItems, setIsDownloading, setActiveItemUrl)
+
+    const handleDeleteItem = (id: string) =>
+        deleteItemById(id, items, setItems, setIsDownloading, setActiveItemUrl)
+
+    const handleDeleteSelected = () =>
+        deleteSelectedItems(items, setItems, setIsDownloading, setActiveItemUrl)
 
     const handleSelectFolder = async () => {
         const selected = await window.files.chooseDirectory()
@@ -318,15 +456,16 @@ export function YoutubeDownloader() {
 
         if (!matchesSearch) return false
 
-        if (activeFilter === 'individual') return item.type === 'video'
-        if (activeFilter === 'channels') return item.type === 'channel'
+        if (activeFilter === 'individual') return !item.channelName
+        if (activeFilter === 'channels') return Boolean(item.channelName)
         if (activeFilter.startsWith('channel:')) {
             const targetChannel = activeFilter.replace('channel:', '')
             return item.channelName === targetChannel
         }
         if (activeFilter === 'finished') return item.status === 'Complete'
         if (activeFilter === 'unfinished') return item.status !== 'Complete'
-        if (activeFilter === 'paused') return item.status === 'Paused'
+        if (activeFilter === 'paused')
+            return item.status === 'Paused' || item.status === 'Ready'
 
         return true
     })
@@ -345,26 +484,19 @@ export function YoutubeDownloader() {
         )
     }
 
-    const handleRefresh = async () => {
-        try {
-            const ds = await window.api.youtube.getDownloadState()
-            if (ds.isDownloading && ds.url) {
-                setIsDownloading(true)
-                setActiveItemUrl(ds.url)
-            }
-            const saved = localStorage.getItem('fuse_download_items_v2')
-            if (saved) {
-                const parsed = JSON.parse(saved)
-                if (Array.isArray(parsed)) {
-                    setItems(
-                        parsed.map((item) => ({
-                            ...item,
-                            selected: true,
-                        })),
-                    )
-                }
-            }
-        } catch {}
+    const handleOpenFolder = async (item: DownloadItem) => {
+        if (!item.savePath) return
+        const exists = await window.files.reveal(item.savePath)
+        if (!exists) {
+            setItems((prev) =>
+                prev.map((i) =>
+                    i.id === item.id
+                        ? { ...i, status: 'Missing', statusStage: undefined }
+                        : i,
+                ),
+            )
+            setMissingFileItem(item)
+        }
     }
 
     return (
@@ -375,11 +507,11 @@ export function YoutubeDownloader() {
                 {...dragProps}
             >
                 <div className="flex items-center gap-3">
-                    {isMac && <div className="w-16 shrink-0" />}
+                    {isMac && <div className="w-20 shrink-0" />}
 
                     <div className="flex items-center gap-2">
-                        <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-lg shadow-sm">
-                            <Download className="size-3.5" />
+                        <div className="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-lg shadow-sm">
+                            <Download className="h-3.5 w-3.5" />
                         </div>
                         <span className="text-foreground text-sm font-semibold tracking-wide">
                             Fusemass{' '}
@@ -408,13 +540,13 @@ export function YoutubeDownloader() {
             {/* Action Toolbar */}
             <DownloaderToolbar
                 items={items}
-                isDownloading={isDownloading}
-                onAddUrl={() => setShowAddUrlModal(true)}
-                onStartSelected={() => handleStartSelectedDownloads()}
-                onStop={handleStopDownload}
+                onAddUrl={() => !isFetchingVideos && setShowAddUrlModal(true)}
+                onResumeSelected={() => handleStartSelectedDownloads()}
+                onPauseSelected={handlePauseSelected}
                 onDeleteSelected={handleDeleteSelected}
                 onOptions={() => setShowOptionsModal(true)}
-                onRefresh={handleRefresh}
+                isFetchingVideos={isFetchingVideos}
+                fetchingTitle={fetchingTitle}
             />
 
             {/* Main Body */}
@@ -432,9 +564,12 @@ export function YoutubeDownloader() {
                         allSelected={allSelected}
                         isIndeterminate={isIndeterminate}
                         toggleSelectAll={toggleSelectAll}
-                        onAddUrl={() => setShowAddUrlModal(true)}
+                        onAddUrl={() => !isFetchingVideos && setShowAddUrlModal(true)}
                         onStartItem={(id) => handleStartSelectedDownloads(id)}
-                        onStopDownload={handleStopDownload}
+                        onStopItem={handleStopItem}
+                        onDeleteItem={handleDeleteItem}
+                        onOpenFolder={handleOpenFolder}
+                        isFetchingVideos={isFetchingVideos}
                     />
 
                     <DownloaderFooter
@@ -461,6 +596,14 @@ export function YoutubeDownloader() {
                 onOpenChange={setShowOptionsModal}
                 downloadDir={downloadDir}
                 onSelectFolder={handleSelectFolder}
+                defaultQuality={defaultQuality}
+                onDefaultQualityChange={handleDefaultQualityChange}
+            />
+
+            <FileMissingDialog
+                item={missingFileItem}
+                onClose={() => setMissingFileItem(null)}
+                onRedownload={(id) => handleStartSelectedDownloads(id)}
             />
         </div>
     )

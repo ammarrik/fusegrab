@@ -1,36 +1,41 @@
 import type { DownloadItem } from './types'
 
 import {
+    Loader2,
     Pause,
     Play,
     Plus,
-    RefreshCw,
     Settings,
-    Square,
     Trash2,
 } from '#/components/icons'
 
 interface DownloaderToolbarProps {
     items: DownloadItem[]
-    isDownloading: boolean
     onAddUrl: () => void
-    onStartSelected: () => void
-    onStop: () => void
+    onResumeSelected: () => void
+    onPauseSelected: () => void
     onDeleteSelected: () => void
     onOptions: () => void
-    onRefresh: () => void
+    isFetchingVideos?: boolean
+    fetchingTitle?: string
 }
 
 export function DownloaderToolbar({
     items,
-    isDownloading,
     onAddUrl,
-    onStartSelected,
-    onStop,
+    onResumeSelected,
+    onPauseSelected,
     onDeleteSelected,
     onOptions,
-    onRefresh,
+    isFetchingVideos,
+    fetchingTitle,
 }: DownloaderToolbarProps) {
+    const selectedItems = items.filter((i) => i.selected)
+    const hasSelection = selectedItems.length > 0
+    const hasActiveSelected = selectedItems.some(
+        (i) => i.status === 'Downloading' || i.status === 'Queued',
+    )
+
     return (
         <div className="border-border bg-surface flex w-full shrink-0 items-center justify-between gap-2 overflow-x-auto border-b p-2 select-none">
             <div className="flex items-center gap-1.5">
@@ -38,8 +43,13 @@ export function DownloaderToolbar({
                 <button
                     type="button"
                     onClick={onAddUrl}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium shadow-xs transition-all active:scale-95"
-                    title="Add URL"
+                    disabled={isFetchingVideos}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium shadow-xs transition-all active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+                    title={
+                        isFetchingVideos
+                            ? 'Fetching videos in progress...'
+                            : 'Add URL'
+                    }
                     aria-label="Add URL"
                 >
                     <Plus className="size-3.5" />
@@ -48,61 +58,50 @@ export function DownloaderToolbar({
 
                 <div className="bg-border/60 mx-1 h-4 w-px" />
 
-                {/* Resume */}
-                <button
-                    type="button"
-                    onClick={onStartSelected}
-                    disabled={
-                        isDownloading ||
-                        items.length === 0 ||
-                        !items.some((i) => i.status !== 'Complete')
-                    }
-                    className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                    title="Resume Download"
-                    aria-label="Resume Download"
-                >
-                    <Play className="text-success size-3.5" />
-                    <span>Resume</span>
-                </button>
+                {/* Resume All / Pause All Toggle Button */}
+                {hasActiveSelected ? (
+                    <button
+                        type="button"
+                        onClick={onPauseSelected}
+                        disabled={!hasSelection}
+                        className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+                        title="Pause Selected Downloads"
+                        aria-label="Pause Selected Downloads"
+                    >
+                        <Pause className="h-3.5 w-3.5 text-amber-500" />
+                        <span>Pause All</span>
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={onResumeSelected}
+                        disabled={
+                            !hasSelection ||
+                            !selectedItems.some((i) => i.status !== 'Complete')
+                        }
+                        className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+                        title="Resume Selected Downloads"
+                        aria-label="Resume Selected Downloads"
+                    >
+                        <Play className="text-success size-3.5" />
+                        <span>Resume All</span>
+                    </button>
+                )}
 
-                {/* Stop */}
-                <button
-                    type="button"
-                    onClick={onStop}
-                    disabled={!isDownloading}
-                    className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                    title="Stop Active Download"
-                    aria-label="Stop Active Download"
-                >
-                    <Pause className="h-3.5 w-3.5 text-amber-500" />
-                    <span>Stop</span>
-                </button>
-
-                {/* Stop All */}
-                <button
-                    type="button"
-                    onClick={onStop}
-                    disabled={!isDownloading}
-                    className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                    title="Stop All Downloads"
-                    aria-label="Stop All Downloads"
-                >
-                    <Square className="text-danger size-3.5" />
-                    <span>Stop All</span>
-                </button>
-
-                {/* Delete */}
+                {/* Delete All */}
                 <button
                     type="button"
                     onClick={onDeleteSelected}
-                    disabled={items.length === 0}
+                    disabled={!hasSelection}
                     className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
                     title="Delete Selected Items"
                     aria-label="Delete Selected Items"
                 >
                     <Trash2 className="text-danger size-3.5" />
-                    <span>Delete</span>
+                    <span>Delete All</span>
                 </button>
+
+                <div className="bg-border/60 mx-1 h-4 w-px" />
 
                 {/* Options */}
                 <button
@@ -117,19 +116,16 @@ export function DownloaderToolbar({
                 </button>
             </div>
 
-            <div className="flex items-center gap-1.5">
-                {/* Refresh */}
-                <button
-                    type="button"
-                    onClick={onRefresh}
-                    className="hover:bg-muted text-foreground flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors"
-                    title="Refresh List"
-                    aria-label="Refresh List"
-                >
-                    <RefreshCw className="text-primary size-3.5" />
-                    <span>Refresh</span>
-                </button>
-            </div>
+            {/* Right Side Live Fetching Indicator */}
+            {isFetchingVideos && (
+                <div className="animate-in fade-in slide-in-from-right-2 flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-medium tracking-tight text-rose-600 shadow-xs transition-all duration-300 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-400">
+                    <Loader2 className="size-3.5 animate-spin text-rose-500" />
+                    <span className="max-w-60 truncate">
+                        Fetching YouTube videos
+                        {fetchingTitle ? `: ${fetchingTitle}` : ''}
+                    </span>
+                </div>
+            )}
         </div>
     )
 }

@@ -1,4 +1,7 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
 import {
+    ChevronDownIcon,
     Download,
     Folder,
     FolderOpen,
@@ -17,6 +20,14 @@ import {
     MenuSeparator,
     MenuTrigger,
 } from '#/components/ui/menu'
+import {
+    Select,
+    SelectContent,
+    SelectIcon,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '#/components/ui/select'
 import type { DownloadItem } from './types'
 import { getStatusText } from './types'
 
@@ -28,7 +39,10 @@ interface DownloaderTableProps {
     toggleSelectAll: (checked: boolean) => void
     onAddUrl: () => void
     onStartItem: (id: string) => void
-    onStopDownload: () => void
+    onStopItem: (id: string) => void
+    onDeleteItem?: (id: string) => void
+    onOpenFolder?: (item: DownloadItem) => void
+    isFetchingVideos?: boolean
 }
 
 export function DownloaderTable({
@@ -39,14 +53,66 @@ export function DownloaderTable({
     toggleSelectAll,
     onAddUrl,
     onStartItem,
-    onStopDownload,
+    onStopItem,
+    onDeleteItem,
+    onOpenFolder,
+    isFetchingVideos,
 }: DownloaderTableProps) {
+    const containerRef = useRef<HTMLDivElement>(null)
+    const [scrollTop, setScrollTop] = useState(0)
+    const [containerHeight, setContainerHeight] = useState(600)
+
+    const ROW_HEIGHT = 57
+    const OVERSCAN = 8
+
+    useEffect(() => {
+        const el = containerRef.current
+        if (!el) return
+
+        const updateHeight = () => {
+            if (el.clientHeight > 0) {
+                setContainerHeight(el.clientHeight)
+            }
+        }
+        updateHeight()
+
+        const observer = new ResizeObserver(updateHeight)
+        observer.observe(el)
+
+        return () => observer.disconnect()
+    }, [])
+
+    const handleScroll = useCallback(() => {
+        if (containerRef.current) {
+            setScrollTop(containerRef.current.scrollTop)
+        }
+    }, [])
+
+    const totalCount = filteredItems.length
+    const startIndex = Math.max(
+        0,
+        Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN,
+    )
+    const endIndex = Math.min(
+        totalCount,
+        Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN,
+    )
+
+    const topPadding = startIndex * ROW_HEIGHT
+    const bottomPadding = (totalCount - endIndex) * ROW_HEIGHT
+
+    const visibleItems = filteredItems.slice(startIndex, endIndex)
+
     return (
-        <div className="flex-1 overflow-y-auto">
-            <table className="w-full border-collapse text-left text-xs table-fixed">
-                <thead>
-                    <tr className="border-border bg-surface text-muted-foreground/80 sticky top-0 z-10 border-b font-normal select-none text-xs">
-                        <th className="w-10 px-3 py-2.5 text-center font-normal">
+        <div
+            ref={containerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto"
+        >
+            <table className="w-full border-separate border-spacing-0 text-left text-xs table-fixed">
+                <thead className="sticky top-0 z-20">
+                    <tr className="text-muted-foreground/80 font-normal select-none text-xs">
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-10 px-3 py-2.5 text-center font-normal">
                             <Checkbox
                                 checked={allSelected}
                                 indeterminate={isIndeterminate}
@@ -56,21 +122,20 @@ export function DownloaderTable({
                                 aria-label="Select all"
                             />
                         </th>
-                        <th className="px-3 py-2.5 font-normal">Name</th>
-                        <th className="w-24 px-3 py-2.5 font-normal">Quality</th>
-                        <th className="w-24 px-3 py-2.5 font-normal">Size</th>
-                        <th className="w-48 px-3 py-2.5 font-normal">Status</th>
-                        <th className="w-32 px-3 py-2.5 font-normal">
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b px-3 py-2.5 font-normal">Name</th>
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-30 px-3 py-2.5 font-normal">Quality</th>
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-48 px-3 py-2.5 font-normal">Status</th>
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-32 px-3 py-2.5 font-normal">
                             Last Modification
                         </th>
-                        <th className="w-10 px-3 py-2.5 text-center font-normal"></th>
+                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-14 px-4 py-2.5 text-center font-normal"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredItems.length === 0 ? (
+                    {totalCount === 0 ? (
                         <tr>
                             <td
-                                colSpan={7}
+                                colSpan={6}
                                 className="text-muted-foreground py-12 text-center"
                             >
                                 <div className="flex flex-col items-center justify-center gap-2">
@@ -81,7 +146,8 @@ export function DownloaderTable({
                                     <button
                                         type="button"
                                         onClick={onAddUrl}
-                                        className="bg-accent text-foreground border-border hover:bg-muted mt-1 rounded-full border px-3 py-1 text-xs"
+                                        disabled={isFetchingVideos}
+                                        className="bg-accent text-foreground border-border hover:bg-muted mt-1 rounded-full border px-3 py-1 text-xs disabled:pointer-events-none disabled:opacity-40"
                                     >
                                         + Add YouTube Link
                                     </button>
@@ -89,9 +155,15 @@ export function DownloaderTable({
                             </td>
                         </tr>
                     ) : (
-                        filteredItems.map((item) => (
-                            <tr
-                                key={item.id}
+                        <>
+                            {topPadding > 0 && (
+                                <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
+                                    <td colSpan={6} className="p-0 border-0" />
+                                </tr>
+                            )}
+                            {visibleItems.map((item) => (
+                                <tr
+                                    key={item.id}
                                 className={`group transition-colors ${
                                     item.selected
                                         ? 'bg-accent/40 hover:bg-accent/60'
@@ -145,14 +217,52 @@ export function DownloaderTable({
                                     </div>
                                 </td>
 
-                                {/* Quality */}
-                                <td className="px-3 py-3.5 text-muted-foreground truncate">
-                                    {item.quality || '720p'}
-                                </td>
-
-                                {/* Size */}
-                                <td className="px-3 py-3.5 text-muted-foreground font-mono text-[11px] truncate">
-                                    {item.size}
+                                {/* Quality Selector */}
+                                <td className="px-3 py-3.5">
+                                    <Select
+                                        value={item.quality || 'Best'}
+                                        onValueChange={(val) => {
+                                            if (!val) return
+                                            setItems((prev) =>
+                                                prev.map((i) =>
+                                                    i.id === item.id
+                                                        ? { ...i, quality: val }
+                                                        : i,
+                                                ),
+                                            )
+                                        }}
+                                        disabled={
+                                            item.status === 'Downloading' ||
+                                            item.status === 'Complete'
+                                        }
+                                    >
+                                        <SelectTrigger className="border-border/70 bg-accent/40 hover:bg-accent h-7 w-26 justify-between px-2 text-xs font-medium whitespace-nowrap">
+                                            <SelectValue placeholder="Best" className="truncate whitespace-nowrap" />
+                                            <SelectIcon className="text-muted-foreground shrink-0 ml-1">
+                                                <ChevronDownIcon className="size-3" />
+                                            </SelectIcon>
+                                        </SelectTrigger>
+                                        <SelectContent align="start">
+                                            <SelectItem value="Best">
+                                                Best
+                                            </SelectItem>
+                                            <SelectItem value="1080p">
+                                                1080p
+                                            </SelectItem>
+                                            <SelectItem value="720p">
+                                                720p
+                                            </SelectItem>
+                                            <SelectItem value="480p">
+                                                480p
+                                            </SelectItem>
+                                            <SelectItem value="360p">
+                                                360p
+                                            </SelectItem>
+                                            <SelectItem value="Audio Only">
+                                                Audio Only
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </td>
 
                                 {/* Status & Progress */}
@@ -163,42 +273,49 @@ export function DownloaderTable({
                                                 className={`truncate font-medium ${
                                                     item.status === 'Complete'
                                                         ? 'text-success'
-                                                        : item.status === 'Error'
-                                                          ? 'text-danger'
+                                                        : item.status === 'Error' ||
+                                                            item.status === 'Missing'
+                                                          ? 'text-danger font-semibold'
                                                           : item.status ===
                                                               'Downloading'
                                                             ? 'text-primary font-semibold'
-                                                            : 'text-muted-foreground'
+                                                            : item.status ===
+                                                                'Ready'
+                                                              ? 'text-emerald-500 font-medium'
+                                                              : 'text-muted-foreground'
                                                 }`}
                                             >
                                                 {getStatusText(item)}
                                             </span>
                                         </div>
 
-                                        {item.status !== 'Queued' && (
-                                            <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-                                                <div
-                                                    className={`h-full transition-all duration-300 ${
-                                                        item.status ===
-                                                        'Complete'
-                                                            ? 'bg-success'
-                                                            : item.status ===
-                                                              'Error'
-                                                              ? 'bg-danger'
-                                                              : 'bg-primary'
-                                                    }`}
-                                                    style={{
-                                                        width: `${
+                                        {item.status !== 'Queued' &&
+                                            item.status !== 'Ready' && (
+                                                <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+                                                    <div
+                                                        className={`h-full transition-all duration-300 ${
                                                             item.status ===
                                                             'Complete'
-                                                                ? 100
-                                                                : item.percent ||
-                                                                  0
-                                                        }%`,
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
+                                                                ? 'bg-success'
+                                                                : item.status ===
+                                                                      'Error' ||
+                                                                  item.status ===
+                                                                      'Missing'
+                                                                  ? 'bg-danger'
+                                                                  : 'bg-primary'
+                                                        }`}
+                                                        style={{
+                                                            width: `${
+                                                                item.status ===
+                                                                'Complete'
+                                                                    ? 100
+                                                                    : item.percent ||
+                                                                      0
+                                                            }%`,
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
                                     </div>
                                 </td>
 
@@ -208,19 +325,23 @@ export function DownloaderTable({
                                 </td>
 
                                 {/* Actions / Menu */}
-                                <td className="w-10 px-3 py-3.5 text-center">
+                                <td className="w-14 px-4 py-3.5 text-center">
                                     <Menu>
                                         <MenuTrigger className="hover:bg-muted text-muted-foreground hover:text-foreground inline-flex size-6 items-center justify-center rounded-md transition-colors">
                                             <MoreHorizontal className="h-4 w-4" />
                                         </MenuTrigger>
                                         <MenuContent sideOffset={4} align="end">
-                                            {item.savePath && (
+                                            {item.savePath && item.status === 'Complete' && (
                                                 <MenuItem
-                                                    onClick={() =>
-                                                        window.files.reveal(
-                                                            item.savePath!,
-                                                        )
-                                                    }
+                                                    onClick={() => {
+                                                        if (onOpenFolder) {
+                                                            onOpenFolder(item)
+                                                        } else {
+                                                            window.files.reveal(
+                                                                item.savePath!,
+                                                            )
+                                                        }
+                                                    }}
                                                 >
                                                     <FolderOpen className="h-3.5 w-3.5 text-amber-500" />
                                                     <span>Open Folder</span>
@@ -228,19 +349,47 @@ export function DownloaderTable({
                                             )}
                                             {item.status === 'Downloading' ? (
                                                 <MenuItem
-                                                    onClick={onStopDownload}
+                                                    onClick={() =>
+                                                        onStopItem(item.id)
+                                                    }
                                                 >
                                                     <Pause className="h-3.5 w-3.5 text-amber-500" />
                                                     <span>Pause</span>
                                                 </MenuItem>
-                                            ) : item.status === 'Paused' ? (
+                                            ) : item.status === 'Queued' ? (
+                                                <MenuItem
+                                                    onClick={() => {
+                                                        setItems((prev) =>
+                                                            prev.map((i) =>
+                                                                i.id === item.id
+                                                                    ? {
+                                                                          ...i,
+                                                                          status: 'Paused',
+                                                                          statusStage:
+                                                                              undefined,
+                                                                      }
+                                                                    : i,
+                                                            ),
+                                                        )
+                                                    }}
+                                                >
+                                                    <Pause className="h-3.5 w-3.5 text-amber-500" />
+                                                    <span>Dequeue</span>
+                                                </MenuItem>
+                                            ) : item.status === 'Paused' ||
+                                              item.status === 'Stopped' ||
+                                              item.status === 'Ready' ? (
                                                 <MenuItem
                                                     onClick={() =>
                                                         onStartItem(item.id)
                                                     }
                                                 >
                                                     <Play className="text-success h-3.5 w-3.5" />
-                                                    <span>Resume</span>
+                                                    <span>
+                                                        {item.status === 'Ready'
+                                                            ? 'Start Download'
+                                                            : 'Resume'}
+                                                    </span>
                                                 </MenuItem>
                                             ) : item.status === 'Complete' ? (
                                                 <MenuItem
@@ -264,12 +413,17 @@ export function DownloaderTable({
                                             <MenuSeparator />
                                             <MenuItem
                                                 onClick={() => {
-                                                    setItems((prev) =>
-                                                        prev.filter(
-                                                            (i) =>
-                                                                i.id !== item.id,
-                                                        ),
-                                                    )
+                                                    if (onDeleteItem) {
+                                                        onDeleteItem(item.id)
+                                                    } else {
+                                                        setItems((prev) =>
+                                                            prev.filter(
+                                                                (i) =>
+                                                                    i.id !==
+                                                                    item.id,
+                                                            ),
+                                                        )
+                                                    }
                                                 }}
                                                 className="text-danger hover:bg-danger/10 focus:bg-danger/10"
                                             >
@@ -280,7 +434,13 @@ export function DownloaderTable({
                                     </Menu>
                                 </td>
                             </tr>
-                        ))
+                        ))}
+                            {bottomPadding > 0 && (
+                                <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
+                                    <td colSpan={6} className="p-0 border-0" />
+                                </tr>
+                            )}
+                        </>
                     )}
                 </tbody>
             </table>

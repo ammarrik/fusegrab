@@ -28,7 +28,10 @@ contextBridge.exposeInMainWorld('files', {
             filePath: string
             size: number
         } | null>,
-    reveal: (filePath: string) => ipcRenderer.invoke('files:reveal', filePath),
+    reveal: (filePath: string) =>
+        ipcRenderer.invoke('files:reveal', filePath) as Promise<boolean>,
+    deletePartialFile: (filePath: string) =>
+        ipcRenderer.invoke('files:delete-partial', filePath) as Promise<void>,
 })
 
 contextBridge.exposeInMainWorld('api', {
@@ -97,6 +100,13 @@ contextBridge.exposeInMainWorld('api', {
             ipcRenderer.on('youtube:channel-progress', handler)
             return () => {
                 ipcRenderer.off('youtube:channel-progress', handler)
+            }
+        },
+        onChannelVideoBatch: (cb: (batch: any) => void) => {
+            const handler = (_: unknown, batch: any) => cb(batch)
+            ipcRenderer.on('youtube:channel-video-batch', handler)
+            return () => {
+                ipcRenderer.off('youtube:channel-video-batch', handler)
             }
         },
     },
