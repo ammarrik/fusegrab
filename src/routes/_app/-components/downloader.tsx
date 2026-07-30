@@ -171,9 +171,7 @@ export function YoutubeDownloader() {
                             status: 'Downloading',
                             percent: newPercent,
                             statusStage:
-                                newPercent >= 99
-                                    ? 'Finalizing...'
-                                    : undefined,
+                                newPercent >= 99 ? 'Finalizing...' : undefined,
                         }
                     }
                     return item
@@ -488,7 +486,7 @@ export function YoutubeDownloader() {
                     ? -1
                     : isBest
                       ? undefined
-                      : (parseInt(item.quality || '', 10) || undefined)
+                      : parseInt(item.quality || '', 10) || undefined
 
                 await window.api.youtube.download({
                     url: item.url,
@@ -647,7 +645,7 @@ export function YoutubeDownloader() {
                 {...dragProps}
             >
                 <div className="flex items-center gap-3">
-                    {isMac && <div className="w-20 shrink-0" />}
+                    {isMac && <div className="w-16 shrink-0" />}
 
                     <div className="flex items-center gap-2">
                         <div className="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-lg shadow-sm">

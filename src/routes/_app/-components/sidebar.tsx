@@ -26,10 +26,10 @@ export function DownloaderSidebar({
     )
 
     return (
-        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r p-3 select-none">
-            <div className="flex flex-col gap-4 overflow-y-auto">
+        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pb-3 pl-3 pr-0 select-none">
+            <div className="flex flex-col gap-4 overflow-y-auto pr-1.5">
                 <div>
-                    <div className="text-muted-foreground mb-2 px-2 text-[10px] font-semibold tracking-wider uppercase">
+                    <div className="bg-surface text-muted-foreground sticky top-0 z-10 pt-1 pb-1.5 px-2 text-[10px] font-semibold tracking-wider uppercase">
                         Categories
                     </div>
 
