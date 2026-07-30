@@ -97,8 +97,8 @@ const createWindow = () => {
         ...(isMac ? {} : { icon: windowIcon }),
         ...(isMac
             ? ({
-                  titleBarStyle: 'hiddenInset',
-                  trafficLightPosition: { x: 12, y: 12 },
+                  titleBarStyle: 'hidden',
+                  trafficLightPosition: { x: 13, y: 14 },
                   backgroundColor: '#ffffff',
               } as const)
             : ({

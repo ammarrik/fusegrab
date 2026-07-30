@@ -641,29 +641,27 @@ export function YoutubeDownloader() {
         <div className="bg-background text-foreground flex h-full w-full flex-col overflow-hidden font-sans select-none">
             {/* Top Bar / App Header */}
             <div
-                className="border-border bg-surface flex h-11 w-full shrink-0 items-center justify-between border-b p-2"
+                className="border-border bg-surface relative flex h-10 w-full shrink-0 items-center justify-between border-b px-3 pr-1.5 pl-1"
                 {...dragProps}
             >
                 <div className="flex items-center gap-3">
                     {isMac && <div className="w-16 shrink-0" />}
+                </div>
 
-                    <div className="flex items-center gap-2">
-                        <div className="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-lg shadow-sm">
-                            <Download className="h-3.5 w-3.5" />
-                        </div>
-                        <span className="text-foreground text-sm font-semibold tracking-wide">
-                            Fusemass{' '}
-                            <span className="text-muted-foreground text-xs font-normal">
-                                v1.0
-                            </span>
-                        </span>
+                {/* Centered App Title */}
+                <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
+                    <div className="bg-primary text-primary-foreground flex h-5.5 w-5.5 items-center justify-center rounded-md shadow-xs">
+                        <Download className="h-3 w-3" />
                     </div>
+                    <span className="text-foreground text-xs font-semibold tracking-wide">
+                        Fusemass
+                    </span>
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <InputRoot className="h-7 w-48 rounded-full lg:w-64">
+                    <InputRoot className="h-6.5 w-44 rounded-full lg:w-56">
                         <InputIcon>
-                            <Search />
+                            <Search className="size-3" />
                         </InputIcon>
                         <InputField
                             placeholder="Search in the List"
