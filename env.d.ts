@@ -2,6 +2,7 @@
 import type { SaveTarget } from '#/lib/services/files/service'
 import type { UpdateState } from '#/lib/services/updater/service'
 import type {
+    ActiveDownloadState,
     ChannelProgressEvent,
     DownloadChannelOptions,
     DownloadOptions,
@@ -40,6 +41,7 @@ declare global {
                     options: DownloadChannelOptions,
                 ) => Promise<void>
                 cancelDownload: () => Promise<void>
+                getDownloadState: () => Promise<ActiveDownloadState>
                 onProgress: (
                     cb: (progress: {
                         downloadedBytes: number

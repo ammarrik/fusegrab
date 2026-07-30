@@ -36,6 +36,7 @@ import {
     PlayIcon,
     PlugSocketIcon,
     RefreshIcon,
+    Remove01Icon,
     Robot01Icon,
     ScrollIcon,
     Search01Icon,
@@ -85,6 +86,7 @@ export const Images = makeIcon(Album02Icon)
 export const Lightbulb = makeIcon(BulbIcon)
 export const Loader2 = makeIcon(Loading03Icon)
 export const Mic = makeIcon(Mic02Icon)
+export const Minus = makeIcon(Remove01Icon)
 export const MoreHorizontal = makeIcon(MoreHorizontalSquareIcon)
 export const MoreVertical = makeIcon(MoreVerticalIcon)
 export const Music = makeIcon(MusicNote01Icon)

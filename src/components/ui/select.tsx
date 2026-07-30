@@ -1,113 +1,93 @@
+import * as React from 'react'
+
 import { Select as Base } from '@base-ui/react/select'
 
-import { Check, ChevronDownIcon } from '#/components/icons'
+import { Check } from '#/components/icons'
 import { cn } from '#/lib/utils'
 
-export type SelectOption<T extends string> = {
-    value: T
-    label: string
-    /** Muted text after the label — for a hint like "Fastest, roughest". */
-    hint?: string
-}
+/* ─── Primitives re-exported from Base UI ─── */
+export const Select = Base.Root
+export const SelectValue = Base.Value
+export const SelectIcon = Base.Icon
+export const SelectPortal = Base.Portal
+export const SelectPositioner = Base.Positioner
+export const SelectItemText = Base.ItemText
+export const SelectItemIndicator = Base.ItemIndicator
+export const SelectGroup = Base.Group
+export const SelectGroupLabel = Base.GroupLabel
 
-type SelectProps<T extends string> = {
-    value: T
-    options: Array<SelectOption<T>>
-    onValueChange: (value: T) => void
-    disabled?: boolean
-    placeholder?: string
-    className?: string
+/* ─── SelectTrigger ─── */
+export const SelectTrigger = React.forwardRef<
+    HTMLButtonElement,
+    React.ComponentPropsWithoutRef<typeof Base.Trigger>
+>(({ className, children, ...props }, ref) => (
+    <Base.Trigger
+        ref={ref}
+        className={cn(
+            'border-border bg-surface text-foreground hover:border-border-strong focus-visible:ring-ring/50 data-popup-open:border-border-strong flex h-8.5 w-full items-center gap-2 rounded-md border px-2.5 text-left text-xs shadow-[0_1px_1px_rgb(0_0_0/0.03)] transition-[border-color,box-shadow] outline-none focus-visible:ring-2 data-disabled:pointer-events-none data-disabled:opacity-50',
+            className,
+        )}
+        {...props}
+    >
+        {children}
+    </Base.Trigger>
+))
+SelectTrigger.displayName = 'SelectTrigger'
+
+/* ─── SelectContent ─── */
+export interface SelectContentProps
+    extends React.ComponentPropsWithoutRef<typeof Base.Popup> {
     sideOffset?: number
-    'aria-label'?: string
+    align?: 'start' | 'center' | 'end'
 }
 
-export function Select<T extends string>({
-    value,
-    options,
-    onValueChange,
-    disabled,
-    placeholder,
-    className,
-    sideOffset = 4,
-    'aria-label': ariaLabel,
-}: SelectProps<T>) {
-    return (
-        <Base.Root
-            value={value}
-            disabled={disabled}
-            onValueChange={(next) => {
-                if (next != null) onValueChange(next)
-            }}
+export const SelectContent = React.forwardRef<
+    HTMLDivElement,
+    SelectContentProps
+>(({ className, sideOffset = 4, align = 'start', children, ...props }, ref) => (
+    <Base.Portal>
+        <Base.Positioner
+            sideOffset={sideOffset}
+            align={align}
+            alignItemWithTrigger={false}
+            className="z-50 outline-none"
         >
-            <Base.Trigger
-                aria-label={ariaLabel}
+            <Base.Popup
+                ref={ref}
                 className={cn(
-                    'border-border bg-surface text-foreground hover:border-border-strong focus-visible:ring-ring/50 data-popup-open:border-border-strong flex h-8.5 w-full items-center gap-2 rounded-md border px-2.5 text-left text-[13px] shadow-[0_1px_1px_rgb(0_0_0/0.03)] transition-[border-color,box-shadow] outline-none focus-visible:ring-2 data-disabled:pointer-events-none data-disabled:opacity-50',
+                    'border-border bg-popover text-foreground z-50 max-h-[min(22rem,var(--available-height))] w-36 min-w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-lg border p-1 shadow-xl transition-[opacity,transform] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0',
                     className,
                 )}
+                {...props}
             >
-                <Base.Value className="min-w-0 flex-1 truncate">
-                    {(selected: unknown) => {
-                        const option = options.find(
-                            (entry) => entry.value === selected,
-                        )
-                        if (!option) {
-                            return (
-                                <span className="text-muted-foreground">
-                                    {placeholder ?? 'Select…'}
-                                </span>
-                            )
-                        }
-                        return (
-                            <span className="flex min-w-0 items-baseline gap-1.5">
-                                <span className="truncate">{option.label}</span>
-                                {option.hint && (
-                                    <span className="text-muted-foreground truncate text-xs">
-                                        {option.hint}
-                                    </span>
-                                )}
-                            </span>
-                        )
-                    }}
-                </Base.Value>
-                <Base.Icon className="text-muted-foreground shrink-0">
-                    <ChevronDownIcon className="size-3.5" />
-                </Base.Icon>
-            </Base.Trigger>
+                <Base.List className="max-h-[inherit] overflow-y-auto">
+                    {children}
+                </Base.List>
+            </Base.Popup>
+        </Base.Positioner>
+    </Base.Portal>
+))
+SelectContent.displayName = 'SelectContent'
 
-            <Base.Portal>
-                <Base.Positioner
-                    sideOffset={sideOffset}
-                    alignItemWithTrigger={false}
-                    className="z-50 outline-none"
-                >
-                    <Base.Popup className="border-border bg-popover max-h-[min(22rem,var(--available-height))] w-36 min-w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-2xl border p-1.5 shadow-xl shadow-black/10 transition-[transform,opacity] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
-                        <Base.List className="max-h-[inherit] overflow-y-auto">
-                            {options.map((option) => (
-                                <Base.Item
-                                    key={option.value}
-                                    value={option.value}
-                                    className="text-foreground data-highlighted:bg-accent flex cursor-default items-center gap-2 rounded-xl py-1.5 pr-2.5 pl-2.5 text-[13px] outline-none select-none data-disabled:opacity-50"
-                                >
-                                    <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-                                        <Base.ItemText className="truncate">
-                                            {option.label}
-                                        </Base.ItemText>
-                                        {option.hint && (
-                                            <span className="text-muted-foreground truncate text-xs">
-                                                {option.hint}
-                                            </span>
-                                        )}
-                                    </span>
-                                    <Base.ItemIndicator className="shrink-0">
-                                        <Check className="size-3.5" />
-                                    </Base.ItemIndicator>
-                                </Base.Item>
-                            ))}
-                        </Base.List>
-                    </Base.Popup>
-                </Base.Positioner>
-            </Base.Portal>
-        </Base.Root>
-    )
-}
+/* ─── SelectItem ─── */
+export const SelectItem = React.forwardRef<
+    HTMLDivElement,
+    React.ComponentPropsWithoutRef<typeof Base.Item>
+>(({ className, children, ...props }, ref) => (
+    <Base.Item
+        ref={ref}
+        className={cn(
+            'text-foreground data-highlighted:bg-muted flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-40',
+            className,
+        )}
+        {...props}
+    >
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            {children}
+        </span>
+        <Base.ItemIndicator className="shrink-0">
+            <Check className="size-3.5" />
+        </Base.ItemIndicator>
+    </Base.Item>
+))
+SelectItem.displayName = 'SelectItem'

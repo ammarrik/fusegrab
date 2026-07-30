@@ -27,6 +27,7 @@ import {
     cancelYoutubeDownload,
     downloadYoutubeChannel,
     downloadYoutubeVideo,
+    getActiveDownloadState,
     getYoutubeChannelPage,
     getYoutubeUrlType,
     getYoutubeVideoInfo,
@@ -246,3 +247,4 @@ handle('youtube:download-channel', (event, options) =>
     ),
 )
 handle('youtube:cancel-download', () => cancelYoutubeDownload())
+handle('youtube:get-download-state', () => getActiveDownloadState())

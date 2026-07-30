@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('api', {
             isAudioOnly?: boolean
         }) => ipcRenderer.invoke('youtube:download-channel', options),
         cancelDownload: () => ipcRenderer.invoke('youtube:cancel-download'),
+        getDownloadState: () =>
+            ipcRenderer.invoke('youtube:get-download-state'),
         onProgress: (
             cb: (progress: {
                 downloadedBytes: number
