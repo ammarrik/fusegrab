@@ -24,6 +24,16 @@ export async function getYoutubeUrlType(
     }
 
     if (
+        cleanUrl.includes('/watch?v=') ||
+        cleanUrl.includes('watch?v=') ||
+        cleanUrl.includes('v=') ||
+        cleanUrl.includes('youtu.be/') ||
+        cleanUrl.includes('/shorts/')
+    ) {
+        return 'video'
+    }
+
+    if (
         cleanUrl.includes('/@') ||
         cleanUrl.includes('/channel/') ||
         cleanUrl.includes('/c/') ||
@@ -31,14 +41,6 @@ export async function getYoutubeUrlType(
         cleanUrl.includes('list=')
     ) {
         return 'channel'
-    }
-
-    if (
-        cleanUrl.includes('/watch?v=') ||
-        cleanUrl.includes('youtu.be/') ||
-        cleanUrl.includes('/shorts/')
-    ) {
-        return 'video'
     }
 
     const ytDlpPath = await ensureYtDlpBinary()
@@ -243,6 +245,9 @@ export async function downloadYoutubeChannel(
         '--newline',
         '--merge-output-format',
         'mp4',
+        '--postprocessor-args',
+        'ffmpeg:-c copy',
+        '--no-mtime',
         '--sleep-requests',
         '1',
         '--sleep-interval',
@@ -258,9 +263,15 @@ export async function downloadYoutubeChannel(
     if (isAudioOnly) {
         args.push('-f', 'bestaudio', '-x', '--audio-format', 'mp3')
     } else if (qualityHeight) {
-        args.push('-f', `bestvideo[height<=${qualityHeight}]+bestaudio/best`)
+        args.push(
+            '-f',
+            `bestvideo[height<=${qualityHeight}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${qualityHeight}]+bestaudio/best`,
+        )
     } else {
-        args.push('-f', 'bestvideo+bestaudio/best')
+        args.push(
+            '-f',
+            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+        )
     }
 
     const outputTemplate = path.join(saveDir, '%(title)s [%(id)s].%(ext)s')

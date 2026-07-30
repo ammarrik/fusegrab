@@ -34,7 +34,21 @@ export function YoutubeDownloader() {
         const saved = localStorage.getItem('fuse_download_items_v2')
         if (saved) {
             try {
-                return JSON.parse(saved)
+                const parsed: DownloadItem[] = JSON.parse(saved)
+                return parsed.map((item) => {
+                    if (
+                        item.status === 'Downloading' ||
+                        item.status === 'Queued' ||
+                        item.statusStage === 'Preparing...'
+                    ) {
+                        return {
+                            ...item,
+                            status: 'Ready' as const,
+                            statusStage: undefined,
+                        }
+                    }
+                    return item
+                })
             } catch {}
         }
         return []
@@ -148,13 +162,17 @@ export function YoutubeDownloader() {
                             ? item.url === activeItemUrlRef.current
                             : item.status === 'Downloading'
                     ) {
+                        const newPercent = Math.max(
+                            item.percent || 0,
+                            data.percent,
+                        )
                         return {
                             ...item,
                             status: 'Downloading',
-                            percent: data.percent,
+                            percent: newPercent,
                             statusStage:
-                                data.percent >= 99 && data.percent < 100
-                                    ? 'Combining parts...'
+                                newPercent >= 99
+                                    ? 'Finalizing...'
                                     : undefined,
                         }
                     }
@@ -391,7 +409,7 @@ export function YoutubeDownloader() {
                       ? i.selected && i.status !== 'Complete'
                       : i.status !== 'Complete'
 
-                if (isTarget && i.status !== 'Downloading') {
+                if (isTarget) {
                     if (canStartImmediately && i.id === firstItem.id) {
                         return {
                             ...i,
@@ -403,10 +421,12 @@ export function YoutubeDownloader() {
                                     : 'Preparing...',
                         }
                     }
-                    return {
-                        ...i,
-                        status: 'Queued',
-                        statusStage: undefined,
+                    if (i.status !== 'Complete') {
+                        return {
+                            ...i,
+                            status: 'Queued',
+                            statusStage: undefined,
+                        }
                     }
                 }
                 return i
@@ -455,7 +475,11 @@ export function YoutubeDownloader() {
                 const sanitized = sanitizeFilename(item.name)
                 const isAudio = item.quality?.toLowerCase().includes('audio')
                 const ext = isAudio ? 'mp3' : 'mp4'
-                const savePath = `${targetDir.replace(/\/$/, '')}/${sanitized}.${ext}`
+                const channelSubfolder = sanitizeFilename(
+                    item.channelName || 'Uncategorized',
+                )
+                const channelDir = `${targetDir.replace(/\/$/, '')}/${channelSubfolder}`
+                const savePath = `${channelDir}/${sanitized}.${ext}`
                 const isBest =
                     !item.quality ||
                     item.quality === 'Best Quality' ||
@@ -574,11 +598,9 @@ export function YoutubeDownloader() {
 
         if (!matchesSearch) return false
 
-        if (activeFilter === 'individual') return !item.channelName
-        if (activeFilter === 'channels') return Boolean(item.channelName)
         if (activeFilter.startsWith('channel:')) {
             const targetChannel = activeFilter.replace('channel:', '')
-            return item.channelName === targetChannel
+            return (item.channelName || 'Uncategorized') === targetChannel
         }
         if (activeFilter === 'finished') return item.status === 'Complete'
         if (activeFilter === 'unfinished') return item.status !== 'Complete'

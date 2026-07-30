@@ -129,6 +129,9 @@ export async function downloadYoutubeVideo(
         '--newline',
         '--merge-output-format',
         'mp4',
+        '--postprocessor-args',
+        'ffmpeg:-c copy',
+        '--no-mtime',
     ]
 
     if (ffmpegPath && existsSync(ffmpegPath)) {
@@ -147,9 +150,15 @@ export async function downloadYoutubeVideo(
                 ? qualityItag
                 : null)
         if (targetHeight) {
-            args.push('-f', `bestvideo[height<=${targetHeight}]+bestaudio/best`)
+            args.push(
+                '-f',
+                `bestvideo[height<=${targetHeight}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${targetHeight}]+bestaudio/best`,
+            )
         } else {
-            args.push('-f', 'bestvideo+bestaudio/best')
+            args.push(
+                '-f',
+                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+            )
         }
     }
 
@@ -168,25 +177,109 @@ export async function downloadYoutubeVideo(
     onProcessStart(proc)
     const stderrLines: string[] = []
 
+    // Weighted multi-stream progress tracking
+    // Video+audio downloads report two separate 0-100% streams.
+    // We weight them: stream 1 (video) = 0-80%, stream 2 (audio) = 80-95%,
+    // merge/finalize = 95-100%. For audio-only: single stream = 0-100%.
+    let currentStream = 0
+    let lastRawPercent = 0
+    let maxEmittedPercent = 0
+
+    const streamWeights = isAudioOnly
+        ? [{ start: 0, end: 100 }]
+        : [
+              { start: 0, end: 80 },   // video stream
+              { start: 80, end: 95 },   // audio stream
+          ]
+
+    const computeWeightedPercent = (rawPercent: number): number => {
+        const streamIndex = Math.min(currentStream, streamWeights.length - 1)
+        const weight = streamWeights[streamIndex]
+        const mapped =
+            weight.start +
+            (rawPercent / 100) * (weight.end - weight.start)
+        return Math.max(maxEmittedPercent, Math.min(95, mapped))
+    }
+
     return new Promise((resolve, reject) => {
         proc.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n')
             for (const line of lines) {
+                // Detect stream switch via "Destination:" line
+                if (line.includes('[download] Destination:')) {
+                    if (currentStream > 0 || lastRawPercent > 50) {
+                        currentStream++
+                    }
+                    lastRawPercent = 0
+                    continue
+                }
+
                 if (line.includes('[download]')) {
+                    // Detect merge phase
+                    if (
+                        line.includes('[Merger]') ||
+                        line.includes('Merging') ||
+                        line.includes('[ffmpeg]') ||
+                        line.includes('Deleting original file')
+                    ) {
+                        maxEmittedPercent = Math.max(maxEmittedPercent, 99)
+                        const p = {
+                            downloadedBytes: 0,
+                            totalBytes: 0,
+                            percent: maxEmittedPercent,
+                        }
+                        updateState({ progress: p })
+                        if (win && !win.isDestroyed()) {
+                            win.webContents.send('youtube:progress', p)
+                        }
+                        continue
+                    }
+
                     const match = line.match(/\[download\]\s+([\d.]+)%/)
                     if (match) {
-                        const percent = parseFloat(match[1])
-                        if (!isNaN(percent)) {
+                        const rawPercent = parseFloat(match[1])
+                        if (!isNaN(rawPercent)) {
+                            // Detect stream switch via large percent drop
+                            if (
+                                rawPercent < lastRawPercent - 20 &&
+                                lastRawPercent > 50
+                            ) {
+                                currentStream++
+                            }
+                            lastRawPercent = rawPercent
+
+                            const weightedPercent =
+                                computeWeightedPercent(rawPercent)
+                            maxEmittedPercent = weightedPercent
+
                             const p = {
                                 downloadedBytes: 0,
                                 totalBytes: 0,
-                                percent: Math.min(100, percent),
+                                percent: Math.round(weightedPercent * 10) / 10,
                             }
                             updateState({ progress: p })
                             if (win && !win.isDestroyed()) {
                                 win.webContents.send('youtube:progress', p)
                             }
                         }
+                    }
+                }
+
+                // Detect merge/ffmpeg lines outside [download] blocks
+                if (
+                    line.includes('[Merger]') ||
+                    line.includes('[ffmpeg]') ||
+                    line.includes('Deleting original file')
+                ) {
+                    maxEmittedPercent = Math.max(maxEmittedPercent, 99)
+                    const p = {
+                        downloadedBytes: 0,
+                        totalBytes: 0,
+                        percent: maxEmittedPercent,
+                    }
+                    updateState({ progress: p })
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send('youtube:progress', p)
                     }
                 }
             }

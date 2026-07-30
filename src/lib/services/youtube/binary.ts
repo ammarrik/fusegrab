@@ -233,12 +233,18 @@ export async function getAntiRateLimitArgs(
         'Referer:https://www.youtube.com/',
         '--add-header',
         'Origin:https://www.youtube.com/',
+        '--extractor-args',
+        'youtube:player_client=ios,web,mweb',
+        '--throttled-rate',
+        '100K',
+        '--socket-timeout',
+        '15',
         '--retries',
-        '10',
-        '--fragment-retries',
-        '10',
-        '--file-access-retries',
         '5',
+        '--fragment-retries',
+        '5',
+        '--file-access-retries',
+        '3',
     ]
 
     const aria2Path = await ensureAria2Binary()
@@ -247,7 +253,7 @@ export async function getAntiRateLimitArgs(
             '--external-downloader',
             aria2Path,
             '--external-downloader-args',
-            'aria2c:-j 16 -x 16 -s 16 -k 1M',
+            'aria2c:-j 16 -x 16 -s 16 -k 1M --connect-timeout=5 --timeout=5 --max-tries=3 --summary-interval=0',
         )
     } else {
         args.push('--concurrent-fragments', '5')

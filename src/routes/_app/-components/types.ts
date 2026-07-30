@@ -46,8 +46,7 @@ export function getStatusText(item: DownloadItem): string {
     if (item.status === 'Downloading') {
         if (item.statusStage) return item.statusStage
         if (!item.percent || item.percent <= 0) return 'Preparing...'
-        if (item.percent >= 99 && item.percent < 100)
-            return 'Combining parts...'
+        if (item.percent >= 99) return 'Finalizing...'
         return `${Math.round(item.percent)}%`
     }
 
