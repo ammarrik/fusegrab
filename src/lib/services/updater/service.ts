@@ -137,7 +137,7 @@ export async function checkForUpdate(): Promise<UpdateState> {
         setState({ status: 'checking', error: null })
         const res = await fetch(LATEST_RELEASE_URL, {
             headers: {
-                'User-Agent': 'Fusemass-Updater',
+                'User-Agent': 'FuseGrab-Updater',
                 Accept: 'application/vnd.github+json',
             },
         })
@@ -237,7 +237,7 @@ export async function downloadUpdate(): Promise<void> {
 
         const res = await fetch(selectedAsset.browser_download_url, {
             headers: {
-                'User-Agent': 'Fusemass-Updater',
+                'User-Agent': 'FuseGrab-Updater',
                 Accept: 'application/octet-stream',
             },
         })

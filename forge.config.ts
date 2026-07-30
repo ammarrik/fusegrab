@@ -4,15 +4,15 @@ const config = {
     packagerConfig: {
         // Product name — capital "R". Drives the macOS .app bundle name, the
         // Finder/Dock label (CFBundleDisplayName), the .dmg name, and the
-        // Windows binary (Fusemass.exe). The npm package name stays lowercase
-        // ("fusemass"); npm requires it. Note: don't set executableName to a
+        // Windows binary (FuseGrab.exe). The npm package name stays lowercase
+        // ("fusegrab"); npm requires it. Note: don't set executableName to a
         // different case — @electron/packager derives CFBundleDisplayName from
         // it, so a lowercase executableName makes the macOS label lowercase.
-        name: 'Fusemass',
+        name: 'FuseGrab',
         // macOS bundle identifier (CFBundleIdentifier). Without this it would
-        // default to com.electron.fusemass. Helper bundles derive from it
-        // (com.fusemass.app.helper, …).
-        appBundleId: 'com.fusemass.app',
+        // default to com.electron.fusegrab. Helper bundles derive from it
+        // (com.fusegrab.app.helper, …).
+        appBundleId: 'com.fusegrab.app',
         // App bundle icon. Electron Forge appends the platform-appropriate
         // extension (.icns on macOS, .ico on Windows). Generate these from
         // assets/icon.png with `pnpm run generate-icons`.

@@ -654,11 +654,11 @@ export function YoutubeDownloader() {
                 <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
                     <img
                         src={appLogo}
-                        alt="Fusemass"
+                        alt="FuseGrab"
                         className="h-5 w-5 rounded-xs object-contain shadow-xs"
                     />
                     <span className="text-foreground text-xs font-semibold tracking-wide">
-                        Fusemass
+                        FuseGrab
                     </span>
                 </div>
 

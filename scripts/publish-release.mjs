@@ -68,7 +68,7 @@ const assets = readdirSync(makeDir)
 if (assets.length === 0) {
     console.error(
         `[publish] no installer assets matching version ${version} found in ${makeDir}\n` +
-            `[publish] expected something like Fuse-Setup-${version}-x64.exe or Fuse-${version}-arm64.dmg`,
+            `[publish] expected something like FuseGrab-Setup-${version}-x64.exe or FuseGrab-${version}-arm64.dmg`,
     )
     process.exit(1)
 }
@@ -117,10 +117,10 @@ if (exists) {
         '--repo',
         repo,
         '--title',
-        `Fuse ${version}`,
+        `FuseGrab ${version}`,
     ]
     if (notesFile) args.push('--notes-file', notesFile)
-    else args.push('--notes', notes ?? `Fuse ${version}`)
+    else args.push('--notes', notes ?? `FuseGrab ${version}`)
     if (draft) args.push('--draft')
     if (prerelease) args.push('--prerelease')
     gh(args)

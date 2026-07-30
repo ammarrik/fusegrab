@@ -1,7 +1,7 @@
-// Builds the traditional Windows installer (.exe) for Fuse.
+// Builds the traditional Windows installer (.exe) for FuseGrab.
 //
 // Run `pnpm run package` first (or use `pnpm run make:nsis`, which does it for
-// you): that produces the unpacked app under out/Fuse-win32-<arch>. This
+// you): that produces the unpacked app under out/FuseGrab-win32-<arch>. This
 // script then drives makensis over build/installer.nsi, passing the source
 // directory, output path, and version as /D defines, and writes the setup
 // wizard to out/make/.
@@ -16,9 +16,9 @@ const ROOT = join(__dirname, '..')
 
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 
-const APPNAME = 'Fuse'
-const COMPANYNAME = 'Fuse'
-const EXENAME = 'Fuse.exe'
+const APPNAME = 'FuseGrab'
+const COMPANYNAME = 'FuseGrab'
+const EXENAME = 'FuseGrab.exe'
 
 const [major = '0', minor = '0', build = '0'] = String(pkg.version).split('.')
 
@@ -35,7 +35,7 @@ const arch = archArg
     ? archArg.slice('--arch='.length)
     : (process.env.FUSE_ARCH ?? process.arch)
 
-const sourceDir = join(ROOT, 'out', `Fuse-win32-${arch}`)
+const sourceDir = join(ROOT, 'out', `FuseGrab-win32-${arch}`)
 if (!existsSync(sourceDir)) {
     console.error(
         `[nsis] packaged app not found at ${sourceDir}\n` +

@@ -1,7 +1,7 @@
-; Traditional Windows installer for Fuse, built with NSIS + Modern UI 2.
+; Traditional Windows installer for FuseGrab, built with NSIS + Modern UI 2.
 ;
 ; This wraps the unpacked app produced by `electron-forge package`
-; (out/Fuse-win32-<arch>) into a wizard-style setup .exe with a
+; (out/FuseGrab-win32-<arch>) into a wizard-style setup .exe with a
 ; Welcome -> Directory -> Install (progress bar) -> Finish flow, plus a
 ; matching uninstaller registered in Add/Remove Programs.
 ;
@@ -16,13 +16,13 @@ Unicode true
 
 ; ---- Configuration (overridable via makensis /D flags) ----------------------
 !ifndef APPNAME
-  !define APPNAME "Fuse"
+  !define APPNAME "FuseGrab"
 !endif
 !ifndef COMPANYNAME
-  !define COMPANYNAME "Fuse"
+  !define COMPANYNAME "FuseGrab"
 !endif
 !ifndef EXENAME
-  !define EXENAME "Fuse.exe"
+  !define EXENAME "FuseGrab.exe"
 !endif
 !ifndef VERSIONMAJOR
   !define VERSIONMAJOR 1
@@ -34,7 +34,7 @@ Unicode true
   !define VERSIONBUILD 0
 !endif
 !ifndef SOURCEDIR
-  !define SOURCEDIR "..\out\Fuse-win32-x64"
+  !define SOURCEDIR "..\out\FuseGrab-win32-x64"
 !endif
 !ifndef OUTFILE
   !define OUTFILE "..\out\make\${APPNAME}-Setup-${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONBUILD}.exe"

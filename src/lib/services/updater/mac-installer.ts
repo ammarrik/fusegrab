@@ -4,7 +4,7 @@ import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 export function updatesDir(): string {
-    return path.join(app.getPath('temp'), 'fuse-updates')
+    return path.join(app.getPath('temp'), 'fusegrab-updates')
 }
 
 export function clampPercent(percent: number): number {
