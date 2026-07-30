@@ -8,6 +8,7 @@
         "#/*": "./src/*"
     },
     "scripts": {
+        "postinstall": "node scripts/postinstall-electron.mjs",
         "start": "electron-forge start",
         "dev": "electron-forge start",
         "package": "electron-forge package",
