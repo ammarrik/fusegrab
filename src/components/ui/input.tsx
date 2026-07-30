@@ -54,56 +54,23 @@ export function Input({ className, numeric, ...props }: InputProps) {
 }
 
 /* ─── Bare input (no border/bg, for use inside InputRoot) ─── */
-export const InputField = React.forwardRef<
-    HTMLInputElement,
-    React.InputHTMLAttributes<HTMLInputElement> & { numeric?: boolean }
->(({ className, numeric, ...props }, ref) => (
-    <input
-        ref={ref}
-        className={cn(
-            'text-foreground placeholder:text-muted-foreground/70 w-full min-w-0 bg-transparent text-[13px] outline-none disabled:pointer-events-none disabled:opacity-50',
-            numeric && 'font-mono',
-            className,
-        )}
-        {...props}
-    />
-))
+export type InputFieldProps = React.ComponentPropsWithoutRef<
+    typeof BaseInput
+> & {
+    numeric?: boolean
+}
+
+export const InputField = React.forwardRef<HTMLInputElement, InputFieldProps>(
+    ({ className, numeric, ...props }, ref) => (
+        <BaseInput
+            ref={ref}
+            className={cn(
+                'text-foreground placeholder:text-muted-foreground/70 w-full min-w-0 bg-transparent text-[13px] outline-none disabled:pointer-events-none disabled:opacity-50',
+                numeric && 'font-mono',
+                className,
+            )}
+            {...props}
+        />
+    ),
+)
 InputField.displayName = 'InputField'
-
-/* ─── ColorInput ─── */
-type ColorInputProps = {
-    value: string
-    onValueChange: (value: string) => void
-    'aria-label'?: string
-}
-
-/**
- * A colour swatch that opens the OS picker. `input[type=color]` is the only way
- * to get the native picker, so it stays — hidden behind a styled label.
- */
-export function ColorInput({
-    value,
-    onValueChange,
-    'aria-label': ariaLabel,
-}: ColorInputProps) {
-    return (
-        // w-full so the swatch lines up with the selects and sliders sharing
-        // the column in a Field row.
-        <label className="border-border bg-surface hover:border-border-strong focus-within:ring-ring/40 flex h-8.5 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2 shadow-[0_1px_1px_rgb(0_0_0/0.03)] transition-[border-color,box-shadow] focus-within:ring-2">
-            <span
-                className="size-4 shrink-0 rounded border border-black/15"
-                style={{ backgroundColor: value }}
-            />
-            <span className="text-muted-foreground truncate font-mono text-[11px] uppercase">
-                {value}
-            </span>
-            <input
-                type="color"
-                aria-label={ariaLabel}
-                value={value}
-                onChange={(event) => onValueChange(event.target.value)}
-                className="sr-only"
-            />
-        </label>
-    )
-}

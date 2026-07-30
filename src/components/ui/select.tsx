@@ -35,8 +35,9 @@ export const SelectTrigger = React.forwardRef<
 SelectTrigger.displayName = 'SelectTrigger'
 
 /* ─── SelectContent ─── */
-export interface SelectContentProps
-    extends React.ComponentPropsWithoutRef<typeof Base.Popup> {
+export interface SelectContentProps extends React.ComponentPropsWithoutRef<
+    typeof Base.Popup
+> {
     sideOffset?: number
     align?: 'start' | 'center' | 'end'
 }

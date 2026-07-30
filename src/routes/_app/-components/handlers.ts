@@ -87,9 +87,7 @@ export async function deleteSelectedItems(
 ) {
     const hasSelection = items.some((i) => i.selected)
     const targetItems = hasSelection ? items.filter((i) => i.selected) : items
-    const hasDownloading = targetItems.some(
-        (i) => i.status === 'Downloading',
-    )
+    const hasDownloading = targetItems.some((i) => i.status === 'Downloading')
 
     if (hasDownloading) {
         try {
@@ -105,7 +103,5 @@ export async function deleteSelectedItems(
         }
     }
 
-    setItems((prev) =>
-        prev.filter((i) => (hasSelection ? !i.selected : false)),
-    )
+    setItems((prev) => prev.filter((i) => (hasSelection ? !i.selected : false)))
 }

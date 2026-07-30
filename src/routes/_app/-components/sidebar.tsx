@@ -26,10 +26,10 @@ export function DownloaderSidebar({
     )
 
     return (
-        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pb-3 pl-3 pr-0 select-none">
+        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pr-0 pb-3 pl-3 select-none">
             <div className="flex flex-col gap-4 overflow-y-auto pr-1.5">
                 <div>
-                    <div className="bg-surface text-muted-foreground sticky top-0 z-10 pt-1 pb-1.5 px-2 text-[10px] font-semibold tracking-wider uppercase">
+                    <div className="bg-surface text-muted-foreground sticky top-0 z-10 px-2 pt-1 pb-1.5 text-[10px] font-semibold tracking-wider uppercase">
                         Categories
                     </div>
 
@@ -69,7 +69,9 @@ export function DownloaderSidebar({
                                 >
                                     <div className="flex min-w-0 items-center gap-2.5">
                                         <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                                        <span className="truncate">{ch.name}</span>
+                                        <span className="truncate">
+                                            {ch.name}
+                                        </span>
                                     </div>
                                     <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                         {ch.count}

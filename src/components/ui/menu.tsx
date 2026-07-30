@@ -13,8 +13,9 @@ export const MenuGroup = Base.Group
 export const MenuGroupLabel = Base.GroupLabel
 
 /* ─── MenuContent ─── */
-export interface MenuContentProps
-    extends React.ComponentPropsWithoutRef<typeof Base.Popup> {
+export interface MenuContentProps extends React.ComponentPropsWithoutRef<
+    typeof Base.Popup
+> {
     sideOffset?: number
     align?: 'start' | 'center' | 'end'
 }
@@ -64,9 +65,6 @@ export const MenuSeparator = ({
     className,
     ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
-    <div
-        className={cn('bg-border/60 my-1 h-px -mx-1', className)}
-        {...props}
-    />
+    <div className={cn('bg-border/60 -mx-1 my-1 h-px', className)} {...props} />
 )
 MenuSeparator.displayName = 'MenuSeparator'

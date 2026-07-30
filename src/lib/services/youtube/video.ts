@@ -188,16 +188,15 @@ export async function downloadYoutubeVideo(
     const streamWeights = isAudioOnly
         ? [{ start: 0, end: 100 }]
         : [
-              { start: 0, end: 80 },   // video stream
-              { start: 80, end: 95 },   // audio stream
+              { start: 0, end: 80 }, // video stream
+              { start: 80, end: 95 }, // audio stream
           ]
 
     const computeWeightedPercent = (rawPercent: number): number => {
         const streamIndex = Math.min(currentStream, streamWeights.length - 1)
         const weight = streamWeights[streamIndex]
         const mapped =
-            weight.start +
-            (rawPercent / 100) * (weight.end - weight.start)
+            weight.start + (rawPercent / 100) * (weight.end - weight.start)
         return Math.max(maxEmittedPercent, Math.min(95, mapped))
     }
 

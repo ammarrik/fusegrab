@@ -1,5 +1,6 @@
-import { Checkbox as BaseCheckbox } from '@base-ui/react/checkbox'
 import * as React from 'react'
+
+import { Checkbox as BaseCheckbox } from '@base-ui/react/checkbox'
 
 import { Check, Minus } from '#/components/icons'
 import { cn } from '#/lib/utils'
@@ -15,7 +16,7 @@ export function CheckboxRoot({ className, ...props }: CheckboxRootProps) {
     return (
         <BaseCheckbox.Root
             className={cn(
-                'border-border/80 bg-muted/40 focus-visible:ring-ring/50 data-checked:bg-primary data-checked:text-primary-foreground data-checked:border-primary data-indeterminate:bg-transparent data-indeterminate:text-foreground data-indeterminate:border-border peer flex size-4 shrink-0 items-center justify-center rounded border transition-colors outline-none focus-visible:ring-2 data-disabled:cursor-not-allowed data-disabled:opacity-50',
+                'border-border/80 bg-muted/40 focus-visible:ring-ring/50 data-checked:bg-primary data-checked:text-primary-foreground data-checked:border-primary data-indeterminate:text-foreground data-indeterminate:border-border peer flex size-4 shrink-0 items-center justify-center rounded border transition-colors outline-none focus-visible:ring-2 data-disabled:cursor-not-allowed data-disabled:opacity-50 data-indeterminate:bg-transparent',
                 className,
             )}
             {...props}
@@ -38,8 +39,8 @@ export function CheckboxIndicator({
         >
             {children || (
                 <>
-                    <Check className="size-3 stroke-[3] data-indeterminate:hidden" />
-                    <Minus className="hidden size-3 stroke-[3] data-indeterminate:block" />
+                    <Check className="size-3 stroke-3 data-indeterminate:hidden" />
+                    <Minus className="hidden size-3 stroke-3 data-indeterminate:block" />
                 </>
             )}
         </BaseCheckbox.Indicator>
