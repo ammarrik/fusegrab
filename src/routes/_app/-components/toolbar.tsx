@@ -30,11 +30,13 @@ export function DownloaderToolbar({
     isFetchingVideos,
     fetchingTitle,
 }: DownloaderToolbarProps) {
-    const selectedItems = items.filter((i) => i.selected)
-    const hasSelection = selectedItems.length > 0
-    const hasActiveSelected = selectedItems.some(
+    const hasSelection = items.some((i) => i.selected)
+    const targetItems = hasSelection ? items.filter((i) => i.selected) : items
+    const hasActiveSelected = targetItems.some(
         (i) => i.status === 'Downloading' || i.status === 'Queued',
     )
+    const hasResumable = targetItems.some((i) => i.status !== 'Complete')
+    const hasItems = items.length > 0
 
     return (
         <div className="border-border bg-surface flex w-full shrink-0 items-center justify-between gap-2 overflow-x-auto border-b p-2 select-none">
@@ -63,10 +65,10 @@ export function DownloaderToolbar({
                     <button
                         type="button"
                         onClick={onPauseSelected}
-                        disabled={!hasSelection}
+                        disabled={!hasItems}
                         className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                        title="Pause Selected Downloads"
-                        aria-label="Pause Selected Downloads"
+                        title="Pause Downloads"
+                        aria-label="Pause Downloads"
                     >
                         <Pause className="h-3.5 w-3.5 text-amber-500" />
                         <span>Pause All</span>
@@ -75,13 +77,10 @@ export function DownloaderToolbar({
                     <button
                         type="button"
                         onClick={onResumeSelected}
-                        disabled={
-                            !hasSelection ||
-                            !selectedItems.some((i) => i.status !== 'Complete')
-                        }
+                        disabled={!hasItems || !hasResumable}
                         className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                        title="Resume Selected Downloads"
-                        aria-label="Resume Selected Downloads"
+                        title="Resume Downloads"
+                        aria-label="Resume Downloads"
                     >
                         <Play className="text-success size-3.5" />
                         <span>Resume All</span>
@@ -92,10 +91,10 @@ export function DownloaderToolbar({
                 <button
                     type="button"
                     onClick={onDeleteSelected}
-                    disabled={!hasSelection}
+                    disabled={!hasItems}
                     className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                    title="Delete Selected Items"
-                    aria-label="Delete Selected Items"
+                    title="Delete Items"
+                    aria-label="Delete Items"
                 >
                     <Trash2 className="text-danger size-3.5" />
                     <span>Delete All</span>

@@ -32,21 +32,29 @@ export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
     const binPath = path.join(binDir, binName)
 
     const now = Date.now()
-    let isStale = false
+    let needsDownload = true
 
     if (existsSync(binPath)) {
         try {
             const stat = statSync(binPath)
-            if (now - stat.mtimeMs > TWENTY_FOUR_HOURS_MS) {
-                isStale = true
+            // Treat empty or tiny files as corrupt
+            if (stat.size < 1000) {
+                needsDownload = true
+            } else if (
+                now - stat.mtimeMs > TWENTY_FOUR_HOURS_MS ||
+                forceUpdate
+            ) {
+                needsDownload = true
+            } else {
+                needsDownload = false
             }
         } catch {
-            isStale = true
+            needsDownload = true
         }
+    }
 
-        if (!isStale && !forceUpdate) {
-            return binPath
-        }
+    if (!needsDownload) {
+        return binPath
     }
 
     mkdirSync(binDir, { recursive: true })
@@ -56,23 +64,40 @@ export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
         const res = await fetch(url)
         if (res.ok && res.body) {
             const buffer = Buffer.from(await res.arrayBuffer())
+            if (buffer.length < 1000) {
+                throw new Error(
+                    'Downloaded yt-dlp binary is too small, likely corrupt',
+                )
+            }
+
             const tmpPath = `${binPath}.tmp_${now}`
             const ws = createWriteStream(tmpPath)
-            await new Promise((resolve, reject) => {
-                ws.write(buffer, (err) => (err ? reject(err) : resolve(true)))
+            await new Promise<void>((resolve, reject) => {
+                ws.write(buffer, (writeErr) => {
+                    if (writeErr) {
+                        ws.destroy()
+                        return reject(writeErr)
+                    }
+                    ws.end(() => resolve())
+                })
+                ws.on('error', reject)
             })
 
             if (process.platform !== 'win32') {
-                await chmod(tmpPath, 0o755).catch(() => undefined)
+                await chmod(tmpPath, 0o755)
             }
 
-            await rename(tmpPath, binPath).catch(() => undefined)
+            await rename(tmpPath, binPath)
+        } else {
+            throw new Error(`Failed to fetch yt-dlp: HTTP ${res.status}`)
         }
-    } catch {
-        if (existsSync(binPath)) {
+    } catch (err) {
+        if (existsSync(binPath) && statSync(binPath).size > 1000) {
             return binPath
         }
-        throw new Error('Failed to download yt-dlp binary')
+        throw new Error(
+            `Failed to download yt-dlp binary: ${err instanceof Error ? err.message : String(err)}`,
+        )
     }
 
     return binPath
@@ -89,7 +114,10 @@ export async function ensureAria2Binary(): Promise<string | null> {
     const binPath = path.join(binDir, binName)
 
     if (existsSync(binPath)) {
-        return binPath
+        try {
+            const stat = statSync(binPath)
+            if (stat.size > 1000) return binPath
+        } catch {}
     }
 
     try {
@@ -125,9 +153,16 @@ export async function ensureAria2Binary(): Promise<string | null> {
         const tmpArchive = path.join(binDir, `aria2_archive.${ext}`)
         const buffer = Buffer.from(await res.arrayBuffer())
 
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
             const ws = createWriteStream(tmpArchive)
-            ws.write(buffer, (err) => (err ? reject(err) : resolve(true)))
+            ws.write(buffer, (writeErr) => {
+                if (writeErr) {
+                    ws.destroy()
+                    return reject(writeErr)
+                }
+                ws.end(() => resolve())
+            })
+            ws.on('error', reject)
         })
 
         if (process.platform === 'win32') {

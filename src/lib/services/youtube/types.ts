@@ -62,6 +62,10 @@ export interface ActiveDownloadState {
     isDownloading: boolean
     downloadType: 'video' | 'channel' | null
     url: string | null
-    progress: { downloadedBytes: number; totalBytes: number; percent: number } | null
+    progress: {
+        downloadedBytes: number
+        totalBytes: number
+        percent: number
+    } | null
     channelProgress: ChannelProgressEvent | null
 }

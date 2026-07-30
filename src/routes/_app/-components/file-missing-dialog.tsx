@@ -1,3 +1,5 @@
+import type { DownloadItem } from './types'
+
 import { RefreshCw, X } from '#/components/icons'
 import { Button } from '#/components/ui/button'
 import {
@@ -10,7 +12,6 @@ import {
     DialogIconButton,
     DialogTitle,
 } from '#/components/ui/dialog'
-import type { DownloadItem } from './types'
 
 interface FileMissingDialogProps {
     item: DownloadItem | null
@@ -26,7 +27,10 @@ export function FileMissingDialog({
     if (!item) return null
 
     return (
-        <Dialog open={Boolean(item)} onOpenChange={(open) => !open && onClose()}>
+        <Dialog
+            open={Boolean(item)}
+            onOpenChange={(open) => !open && onClose()}
+        >
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>File Not Found</DialogTitle>
@@ -41,7 +45,8 @@ export function FileMissingDialog({
 
                 <DialogBody>
                     <p className="text-foreground text-xs">
-                        The file or directory may have been removed, renamed, or deleted. Do you want to download it again?
+                        The file or directory may have been removed, renamed, or
+                        deleted. Do you want to download it again?
                     </p>
                 </DialogBody>
 

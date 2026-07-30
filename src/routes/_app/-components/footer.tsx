@@ -83,7 +83,7 @@ export function DownloaderFooter({
                     }`}
                 >
                     <span>Paused:</span>
-                    <span className="text-amber-500 font-mono font-semibold">
+                    <span className="font-mono font-semibold text-amber-500">
                         {items.filter((i) => i.status === 'Paused').length}
                     </span>
                 </button>

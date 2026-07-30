@@ -80,13 +80,11 @@ export async function getYoutubeUrlType(
     return 'video'
 }
 
-
-
 export async function getYoutubeChannelPage(
     win: BrowserWindow | null,
     url: string,
     page = 1,
-    limit = 20,
+    limit = 10000,
 ): Promise<YoutubeChannelInfo> {
     const cleanUrl = url.trim()
     if (!cleanUrl) {
@@ -94,7 +92,7 @@ export async function getYoutubeChannelPage(
     }
 
     const skipCount = (page - 1) * limit
-    const targetNeeded = 500
+    const targetNeeded = 10000
 
     const result = await scrapeChannelWithBrowser(
         cleanUrl,
@@ -119,7 +117,7 @@ export async function getYoutubeChannelPage(
         }
     }
 
-    const fallback = await getChannelPageViaYtDlp(cleanUrl, page, 500)
+    const fallback = await getChannelPageViaYtDlp(cleanUrl, page, 10000)
     if (win && !win.isDestroyed() && fallback.videos.length > 0) {
         win.webContents.send('youtube:channel-video-batch', {
             channelUrl: cleanUrl,

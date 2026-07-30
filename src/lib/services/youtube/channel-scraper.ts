@@ -181,7 +181,11 @@ async function runBackgroundScrolling(
         let totalCount = initialCount
         let reachedEnd = false
 
-        while (scrollAttempts < 100 && totalCount < targetNeeded && !reachedEnd) {
+        while (
+            scrollAttempts < 5000 &&
+            totalCount < targetNeeded &&
+            !reachedEnd
+        ) {
             scrollAttempts++
             await win.webContents.executeJavaScript(`
                 (() => {
@@ -208,14 +212,16 @@ async function runBackgroundScrolling(
                 })();
             `)
 
-            await new Promise((res) => setTimeout(res, 1200))
+            await new Promise((res) => setTimeout(res, 600))
 
-            const scraped = await win.webContents.executeJavaScript(EXTRACT_SCRIPT)
+            const scraped =
+                await win.webContents.executeJavaScript(EXTRACT_SCRIPT)
             const currentTitle = scraped?.channelTitle || channelTitle
             const currentRaw: any[] = scraped?.videos || []
             const newBatch: YoutubeChannelVideoItem[] = []
 
             for (const v of currentRaw) {
+                if (totalCount >= targetNeeded) break
                 if (!seenIds.has(v.id)) {
                     seenIds.add(v.id)
                     const parsed: YoutubeChannelVideoItem = {
@@ -223,7 +229,9 @@ async function runBackgroundScrolling(
                         title: v.title,
                         url: v.url,
                         thumbnail: v.thumbnail,
-                        durationSeconds: parseDurationText(v.durationText || ''),
+                        durationSeconds: parseDurationText(
+                            v.durationText || '',
+                        ),
                         author: v.author,
                     }
                     newBatch.push(parsed)
@@ -350,7 +358,11 @@ export async function scrapeChannelWithBrowser(
         const seenIds = new Set<string>()
         const firstBatch: YoutubeChannelVideoItem[] = []
 
-        if (scraped && Array.isArray(scraped.videos) && scraped.videos.length > 0) {
+        if (
+            scraped &&
+            Array.isArray(scraped.videos) &&
+            scraped.videos.length > 0
+        ) {
             for (const v of scraped.videos) {
                 seenIds.add(v.id)
                 firstBatch.push({

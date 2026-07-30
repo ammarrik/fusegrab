@@ -1,3 +1,5 @@
+import type { DownloadItem } from './types'
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -28,7 +30,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '#/components/ui/select'
-import type { DownloadItem } from './types'
+
 import { getStatusText } from './types'
 
 interface DownloaderTableProps {
@@ -109,10 +111,10 @@ export function DownloaderTable({
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto"
         >
-            <table className="w-full border-separate border-spacing-0 text-left text-xs table-fixed">
+            <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
                 <thead className="sticky top-0 z-20">
-                    <tr className="text-muted-foreground/80 font-normal select-none text-xs">
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-10 px-3 py-2.5 text-center font-normal">
+                    <tr className="text-muted-foreground/80 text-xs font-normal select-none">
+                        <th className="border-border bg-surface sticky top-0 z-20 w-10 border-b px-3 py-2.5 text-center font-normal">
                             <Checkbox
                                 checked={allSelected}
                                 indeterminate={isIndeterminate}
@@ -122,13 +124,19 @@ export function DownloaderTable({
                                 aria-label="Select all"
                             />
                         </th>
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b px-3 py-2.5 font-normal">Name</th>
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-30 px-3 py-2.5 font-normal">Quality</th>
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-48 px-3 py-2.5 font-normal">Status</th>
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-32 px-3 py-2.5 font-normal">
+                        <th className="border-border bg-surface sticky top-0 z-20 border-b px-3 py-2.5 font-normal">
+                            Name
+                        </th>
+                        <th className="border-border bg-surface sticky top-0 z-20 w-30 border-b px-3 py-2.5 font-normal">
+                            Quality
+                        </th>
+                        <th className="border-border bg-surface sticky top-0 z-20 w-48 border-b px-3 py-2.5 font-normal">
+                            Status
+                        </th>
+                        <th className="border-border bg-surface sticky top-0 z-20 w-32 border-b px-3 py-2.5 font-normal">
                             Last Modification
                         </th>
-                        <th className="sticky top-0 z-20 border-border bg-surface border-b w-14 px-4 py-2.5 text-center font-normal"></th>
+                        <th className="border-border bg-surface sticky top-0 z-20 w-14 border-b px-4 py-2.5 text-center font-normal"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -157,287 +165,321 @@ export function DownloaderTable({
                     ) : (
                         <>
                             {topPadding > 0 && (
-                                <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
-                                    <td colSpan={6} className="p-0 border-0" />
+                                <tr
+                                    style={{ height: `${topPadding}px` }}
+                                    aria-hidden="true"
+                                >
+                                    <td colSpan={6} className="border-0 p-0" />
                                 </tr>
                             )}
                             {visibleItems.map((item) => (
                                 <tr
                                     key={item.id}
-                                className={`group transition-colors ${
-                                    item.selected
-                                        ? 'bg-accent/40 hover:bg-accent/60'
-                                        : 'hover:bg-muted/50'
-                                }`}
-                            >
-                                {/* Checkbox */}
-                                <td className="w-10 px-3 py-3.5 text-center">
-                                    <Checkbox
-                                        checked={item.selected}
-                                        onCheckedChange={(checked) => {
-                                            setItems((prev) =>
-                                                prev.map((i) =>
-                                                    i.id === item.id
-                                                        ? {
-                                                              ...i,
-                                                              selected:
-                                                                  Boolean(
-                                                                      checked,
-                                                                  ),
-                                                          }
-                                                        : i,
-                                                ),
-                                            )
-                                        }}
-                                        aria-label={`Select ${item.name}`}
-                                    />
-                                </td>
+                                    className={`group transition-colors ${
+                                        item.selected
+                                            ? 'bg-accent/40 hover:bg-accent/60'
+                                            : 'hover:bg-muted/50'
+                                    }`}
+                                >
+                                    {/* Checkbox */}
+                                    <td className="w-10 px-3 py-3.5 text-center">
+                                        <Checkbox
+                                            checked={item.selected}
+                                            onCheckedChange={(checked) => {
+                                                setItems((prev) =>
+                                                    prev.map((i) =>
+                                                        i.id === item.id
+                                                            ? {
+                                                                  ...i,
+                                                                  selected:
+                                                                      Boolean(
+                                                                          checked,
+                                                                      ),
+                                                              }
+                                                            : i,
+                                                    ),
+                                                )
+                                            }}
+                                            aria-label={`Select ${item.name}`}
+                                        />
+                                    </td>
 
-                                {/* Name */}
-                                <td className="px-3 py-3.5 min-w-0">
-                                    <div className="flex min-w-0 items-center gap-2.5">
-                                        {item.type === 'channel' ? (
-                                            <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                                        ) : (
-                                            <Video className="text-primary h-4 w-4 shrink-0" />
-                                        )}
-                                        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                                            <span
-                                                className="text-foreground truncate font-medium text-xs block"
-                                                title={item.name}
-                                            >
-                                                {item.name}
-                                            </span>
-                                            {item.channelName && (
-                                                <span className="text-muted-foreground truncate text-[10px] block">
-                                                    {item.channelName}
-                                                </span>
+                                    {/* Name */}
+                                    <td className="min-w-0 px-3 py-3.5">
+                                        <div className="flex min-w-0 items-center gap-2.5">
+                                            {item.type === 'channel' ? (
+                                                <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                                            ) : (
+                                                <Video className="text-primary h-4 w-4 shrink-0" />
                                             )}
+                                            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                                                <span
+                                                    className="text-foreground block truncate text-xs font-medium"
+                                                    title={item.name}
+                                                >
+                                                    {item.name}
+                                                </span>
+                                                {item.channelName && (
+                                                    <span className="text-muted-foreground block truncate text-[10px]">
+                                                        {item.channelName}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                </td>
+                                    </td>
 
-                                {/* Quality Selector */}
-                                <td className="px-3 py-3.5">
-                                    <Select
-                                        value={item.quality || 'Best'}
-                                        onValueChange={(val) => {
-                                            if (!val) return
-                                            setItems((prev) =>
-                                                prev.map((i) =>
-                                                    i.id === item.id
-                                                        ? { ...i, quality: val }
-                                                        : i,
-                                                ),
-                                            )
-                                        }}
-                                        disabled={
-                                            item.status === 'Downloading' ||
-                                            item.status === 'Complete'
-                                        }
-                                    >
-                                        <SelectTrigger className="border-border/70 bg-accent/40 hover:bg-accent h-7 w-26 justify-between px-2 text-xs font-medium whitespace-nowrap">
-                                            <SelectValue placeholder="Best" className="truncate whitespace-nowrap" />
-                                            <SelectIcon className="text-muted-foreground shrink-0 ml-1">
-                                                <ChevronDownIcon className="size-3" />
-                                            </SelectIcon>
-                                        </SelectTrigger>
-                                        <SelectContent align="start">
-                                            <SelectItem value="Best">
-                                                Best
-                                            </SelectItem>
-                                            <SelectItem value="1080p">
-                                                1080p
-                                            </SelectItem>
-                                            <SelectItem value="720p">
-                                                720p
-                                            </SelectItem>
-                                            <SelectItem value="480p">
-                                                480p
-                                            </SelectItem>
-                                            <SelectItem value="360p">
-                                                360p
-                                            </SelectItem>
-                                            <SelectItem value="Audio Only">
-                                                Audio Only
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </td>
+                                    {/* Quality Selector */}
+                                    <td className="px-3 py-3.5">
+                                        <Select
+                                            value={item.quality || 'Best'}
+                                            onValueChange={(val) => {
+                                                if (!val) return
+                                                setItems((prev) =>
+                                                    prev.map((i) =>
+                                                        i.id === item.id
+                                                            ? {
+                                                                  ...i,
+                                                                  quality: val,
+                                                              }
+                                                            : i,
+                                                    ),
+                                                )
+                                            }}
+                                            disabled={
+                                                item.status === 'Downloading' ||
+                                                item.status === 'Complete'
+                                            }
+                                        >
+                                            <SelectTrigger className="border-border/70 bg-accent/40 hover:bg-accent h-7 w-26 justify-between px-2 text-xs font-medium whitespace-nowrap">
+                                                <SelectValue
+                                                    placeholder="Best"
+                                                    className="truncate whitespace-nowrap"
+                                                />
+                                                <SelectIcon className="text-muted-foreground ml-1 shrink-0">
+                                                    <ChevronDownIcon className="size-3" />
+                                                </SelectIcon>
+                                            </SelectTrigger>
+                                            <SelectContent align="start">
+                                                <SelectItem value="Best">
+                                                    Best
+                                                </SelectItem>
+                                                <SelectItem value="1080p">
+                                                    1080p
+                                                </SelectItem>
+                                                <SelectItem value="720p">
+                                                    720p
+                                                </SelectItem>
+                                                <SelectItem value="480p">
+                                                    480p
+                                                </SelectItem>
+                                                <SelectItem value="360p">
+                                                    360p
+                                                </SelectItem>
+                                                <SelectItem value="Audio Only">
+                                                    Audio Only
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </td>
 
-                                {/* Status & Progress */}
-                                <td className="w-48 px-3 py-3.5 min-w-0">
-                                    <div className="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
-                                        <div className="flex items-center justify-between text-[11px]">
-                                            <span
-                                                className={`truncate font-medium ${
-                                                    item.status === 'Complete'
-                                                        ? 'text-success'
-                                                        : item.status === 'Error' ||
-                                                            item.status === 'Missing'
-                                                          ? 'text-danger font-semibold'
-                                                          : item.status ===
-                                                              'Downloading'
-                                                            ? 'text-primary font-semibold'
+                                    {/* Status & Progress */}
+                                    <td className="w-48 min-w-0 px-3 py-3.5">
+                                        <div className="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span
+                                                    className={`truncate font-medium ${
+                                                        item.status ===
+                                                        'Complete'
+                                                            ? 'text-success'
                                                             : item.status ===
-                                                                'Ready'
-                                                              ? 'text-emerald-500 font-medium'
-                                                              : 'text-muted-foreground'
-                                                }`}
-                                            >
-                                                {getStatusText(item)}
-                                            </span>
-                                        </div>
-
-                                        {item.status !== 'Queued' &&
-                                            item.status !== 'Ready' && (
-                                                <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-                                                    <div
-                                                        className={`h-full transition-all duration-300 ${
-                                                            item.status ===
-                                                            'Complete'
-                                                                ? 'bg-success'
+                                                                    'Error' ||
+                                                                item.status ===
+                                                                    'Missing'
+                                                              ? 'text-danger font-semibold'
+                                                              : item.status ===
+                                                                  'Downloading'
+                                                                ? 'text-primary font-semibold'
                                                                 : item.status ===
-                                                                      'Error' ||
-                                                                  item.status ===
-                                                                      'Missing'
-                                                                  ? 'bg-danger'
-                                                                  : 'bg-primary'
-                                                        }`}
-                                                        style={{
-                                                            width: `${
+                                                                    'Ready'
+                                                                  ? 'font-medium text-emerald-500'
+                                                                  : 'text-muted-foreground'
+                                                    }`}
+                                                >
+                                                    {getStatusText(item)}
+                                                </span>
+                                            </div>
+
+                                            {item.status !== 'Queued' &&
+                                                item.status !== 'Ready' && (
+                                                    <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+                                                        <div
+                                                            className={`h-full transition-all duration-300 ${
                                                                 item.status ===
                                                                 'Complete'
-                                                                    ? 100
-                                                                    : item.percent ||
-                                                                      0
-                                                            }%`,
+                                                                    ? 'bg-success'
+                                                                    : item.status ===
+                                                                            'Error' ||
+                                                                        item.status ===
+                                                                            'Missing'
+                                                                      ? 'bg-danger'
+                                                                      : 'bg-primary'
+                                                            }`}
+                                                            style={{
+                                                                width: `${
+                                                                    item.status ===
+                                                                    'Complete'
+                                                                        ? 100
+                                                                        : item.percent ||
+                                                                          0
+                                                                }%`,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+                                        </div>
+                                    </td>
+
+                                    {/* Last Modification */}
+                                    <td className="text-muted-foreground truncate px-3 py-3.5 font-mono text-[11px]">
+                                        {item.dateModified}
+                                    </td>
+
+                                    {/* Actions / Menu */}
+                                    <td className="w-14 px-4 py-3.5 text-center">
+                                        <Menu>
+                                            <MenuTrigger className="hover:bg-muted text-muted-foreground hover:text-foreground inline-flex size-6 items-center justify-center rounded-md transition-colors">
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </MenuTrigger>
+                                            <MenuContent
+                                                sideOffset={4}
+                                                align="end"
+                                            >
+                                                {item.savePath &&
+                                                    item.status ===
+                                                        'Complete' && (
+                                                        <MenuItem
+                                                            onClick={() => {
+                                                                if (
+                                                                    onOpenFolder
+                                                                ) {
+                                                                    onOpenFolder(
+                                                                        item,
+                                                                    )
+                                                                } else {
+                                                                    window.files.reveal(
+                                                                        item.savePath!,
+                                                                    )
+                                                                }
+                                                            }}
+                                                        >
+                                                            <FolderOpen className="h-3.5 w-3.5 text-amber-500" />
+                                                            <span>
+                                                                Open Folder
+                                                            </span>
+                                                        </MenuItem>
+                                                    )}
+                                                {item.status ===
+                                                'Downloading' ? (
+                                                    <MenuItem
+                                                        onClick={() =>
+                                                            onStopItem(item.id)
+                                                        }
+                                                    >
+                                                        <Pause className="h-3.5 w-3.5 text-amber-500" />
+                                                        <span>Pause</span>
+                                                    </MenuItem>
+                                                ) : item.status === 'Queued' ? (
+                                                    <MenuItem
+                                                        onClick={() => {
+                                                            setItems((prev) =>
+                                                                prev.map((i) =>
+                                                                    i.id ===
+                                                                    item.id
+                                                                        ? {
+                                                                              ...i,
+                                                                              status: 'Paused',
+                                                                              statusStage:
+                                                                                  undefined,
+                                                                          }
+                                                                        : i,
+                                                                ),
+                                                            )
                                                         }}
-                                                    />
-                                                </div>
-                                            )}
-                                    </div>
-                                </td>
-
-                                {/* Last Modification */}
-                                <td className="px-3 py-3.5 text-muted-foreground font-mono text-[11px] truncate">
-                                    {item.dateModified}
-                                </td>
-
-                                {/* Actions / Menu */}
-                                <td className="w-14 px-4 py-3.5 text-center">
-                                    <Menu>
-                                        <MenuTrigger className="hover:bg-muted text-muted-foreground hover:text-foreground inline-flex size-6 items-center justify-center rounded-md transition-colors">
-                                            <MoreHorizontal className="h-4 w-4" />
-                                        </MenuTrigger>
-                                        <MenuContent sideOffset={4} align="end">
-                                            {item.savePath && item.status === 'Complete' && (
+                                                    >
+                                                        <Pause className="h-3.5 w-3.5 text-amber-500" />
+                                                        <span>Dequeue</span>
+                                                    </MenuItem>
+                                                ) : item.status === 'Paused' ||
+                                                  item.status === 'Stopped' ||
+                                                  item.status === 'Ready' ? (
+                                                    <MenuItem
+                                                        onClick={() =>
+                                                            onStartItem(item.id)
+                                                        }
+                                                    >
+                                                        <Play className="text-success h-3.5 w-3.5" />
+                                                        <span>
+                                                            {item.status ===
+                                                            'Ready'
+                                                                ? 'Start Download'
+                                                                : 'Resume'}
+                                                        </span>
+                                                    </MenuItem>
+                                                ) : item.status ===
+                                                  'Complete' ? (
+                                                    <MenuItem
+                                                        onClick={() =>
+                                                            onStartItem(item.id)
+                                                        }
+                                                    >
+                                                        <RefreshCw className="text-primary h-3.5 w-3.5" />
+                                                        <span>Redownload</span>
+                                                    </MenuItem>
+                                                ) : (
+                                                    <MenuItem
+                                                        onClick={() =>
+                                                            onStartItem(item.id)
+                                                        }
+                                                    >
+                                                        <Download className="text-primary h-3.5 w-3.5" />
+                                                        <span>Download</span>
+                                                    </MenuItem>
+                                                )}
+                                                <MenuSeparator />
                                                 <MenuItem
                                                     onClick={() => {
-                                                        if (onOpenFolder) {
-                                                            onOpenFolder(item)
+                                                        if (onDeleteItem) {
+                                                            onDeleteItem(
+                                                                item.id,
+                                                            )
                                                         } else {
-                                                            window.files.reveal(
-                                                                item.savePath!,
+                                                            setItems((prev) =>
+                                                                prev.filter(
+                                                                    (i) =>
+                                                                        i.id !==
+                                                                        item.id,
+                                                                ),
                                                             )
                                                         }
                                                     }}
+                                                    className="text-danger hover:bg-danger/10 focus:bg-danger/10"
                                                 >
-                                                    <FolderOpen className="h-3.5 w-3.5 text-amber-500" />
-                                                    <span>Open Folder</span>
-                                                </MenuItem>
-                                            )}
-                                            {item.status === 'Downloading' ? (
-                                                <MenuItem
-                                                    onClick={() =>
-                                                        onStopItem(item.id)
-                                                    }
-                                                >
-                                                    <Pause className="h-3.5 w-3.5 text-amber-500" />
-                                                    <span>Pause</span>
-                                                </MenuItem>
-                                            ) : item.status === 'Queued' ? (
-                                                <MenuItem
-                                                    onClick={() => {
-                                                        setItems((prev) =>
-                                                            prev.map((i) =>
-                                                                i.id === item.id
-                                                                    ? {
-                                                                          ...i,
-                                                                          status: 'Paused',
-                                                                          statusStage:
-                                                                              undefined,
-                                                                      }
-                                                                    : i,
-                                                            ),
-                                                        )
-                                                    }}
-                                                >
-                                                    <Pause className="h-3.5 w-3.5 text-amber-500" />
-                                                    <span>Dequeue</span>
-                                                </MenuItem>
-                                            ) : item.status === 'Paused' ||
-                                              item.status === 'Stopped' ||
-                                              item.status === 'Ready' ? (
-                                                <MenuItem
-                                                    onClick={() =>
-                                                        onStartItem(item.id)
-                                                    }
-                                                >
-                                                    <Play className="text-success h-3.5 w-3.5" />
+                                                    <Trash2 className="h-3.5 w-3.5" />
                                                     <span>
-                                                        {item.status === 'Ready'
-                                                            ? 'Start Download'
-                                                            : 'Resume'}
+                                                        Delete from List
                                                     </span>
                                                 </MenuItem>
-                                            ) : item.status === 'Complete' ? (
-                                                <MenuItem
-                                                    onClick={() =>
-                                                        onStartItem(item.id)
-                                                    }
-                                                >
-                                                    <RefreshCw className="text-primary h-3.5 w-3.5" />
-                                                    <span>Redownload</span>
-                                                </MenuItem>
-                                            ) : (
-                                                <MenuItem
-                                                    onClick={() =>
-                                                        onStartItem(item.id)
-                                                    }
-                                                >
-                                                    <Download className="text-primary h-3.5 w-3.5" />
-                                                    <span>Download</span>
-                                                </MenuItem>
-                                            )}
-                                            <MenuSeparator />
-                                            <MenuItem
-                                                onClick={() => {
-                                                    if (onDeleteItem) {
-                                                        onDeleteItem(item.id)
-                                                    } else {
-                                                        setItems((prev) =>
-                                                            prev.filter(
-                                                                (i) =>
-                                                                    i.id !==
-                                                                    item.id,
-                                                            ),
-                                                        )
-                                                    }
-                                                }}
-                                                className="text-danger hover:bg-danger/10 focus:bg-danger/10"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5" />
-                                                <span>Delete from List</span>
-                                            </MenuItem>
-                                        </MenuContent>
-                                    </Menu>
-                                </td>
-                            </tr>
-                        ))}
+                                            </MenuContent>
+                                        </Menu>
+                                    </td>
+                                </tr>
+                            ))}
                             {bottomPadding > 0 && (
-                                <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
-                                    <td colSpan={6} className="p-0 border-0" />
+                                <tr
+                                    style={{ height: `${bottomPadding}px` }}
+                                    aria-hidden="true"
+                                >
+                                    <td colSpan={6} className="border-0 p-0" />
                                 </tr>
                             )}
                         </>

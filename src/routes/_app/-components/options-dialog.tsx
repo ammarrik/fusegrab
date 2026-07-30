@@ -53,7 +53,8 @@ export function DownloadOptionsModal({
                 </DialogHeader>
 
                 <DialogDescription>
-                    Configure default download location and video quality format.
+                    Configure default download location and video quality
+                    format.
                 </DialogDescription>
 
                 <DialogBody className="flex flex-col gap-4 py-2">

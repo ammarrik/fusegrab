@@ -3,47 +3,41 @@ import type { DownloadItem } from './types'
 export async function pauseSelectedItems(
     items: DownloadItem[],
     setItems: React.Dispatch<React.SetStateAction<DownloadItem[]>>,
-    setIsDownloading: (val: boolean) => void,
-    setActiveItemUrl: (val: string | null) => void,
 ) {
-    const selectedItems = items.filter((i) => i.selected)
-    const hasDownloadingSelected = selectedItems.some(
-        (i) => i.status === 'Downloading',
-    )
+    const hasSelection = items.some((i) => i.selected)
+    const targetItems = hasSelection ? items.filter((i) => i.selected) : items
+    const hasDownloading = targetItems.some((i) => i.status === 'Downloading')
 
-    if (hasDownloadingSelected) {
+    if (hasDownloading) {
         try {
             await window.api.youtube.cancelDownload()
         } catch {}
-        setIsDownloading(false)
-        setActiveItemUrl(null)
     }
 
     setItems((prev) =>
-        prev.map((i) =>
-            i.selected && (i.status === 'Downloading' || i.status === 'Queued')
-                ? { ...i, status: 'Paused', statusStage: undefined }
-                : i,
-        ),
+        prev.map((i) => {
+            const isTarget = hasSelection ? i.selected : true
+            if (
+                isTarget &&
+                (i.status === 'Downloading' || i.status === 'Queued')
+            ) {
+                return { ...i, status: 'Paused', statusStage: undefined }
+            }
+            return i
+        }),
     )
 }
-
-
 
 export async function stopItemById(
     id: string,
     items: DownloadItem[],
     setItems: React.Dispatch<React.SetStateAction<DownloadItem[]>>,
-    setIsDownloading: (val: boolean) => void,
-    setActiveItemUrl: (val: string | null) => void,
 ) {
     const item = items.find((i) => i.id === id)
     if (item?.status === 'Downloading') {
         try {
             await window.api.youtube.cancelDownload()
         } catch {}
-        setIsDownloading(false)
-        setActiveItemUrl(null)
     }
 
     if (item?.savePath && item.status !== 'Complete') {
@@ -55,7 +49,12 @@ export async function stopItemById(
     setItems((prev) =>
         prev.map((i) =>
             i.id === id
-                ? { ...i, status: 'Stopped', percent: 0, statusStage: undefined }
+                ? {
+                      ...i,
+                      status: 'Stopped',
+                      percent: 0,
+                      statusStage: undefined,
+                  }
                 : i,
         ),
     )
@@ -65,16 +64,12 @@ export async function deleteItemById(
     id: string,
     items: DownloadItem[],
     setItems: React.Dispatch<React.SetStateAction<DownloadItem[]>>,
-    setIsDownloading: (val: boolean) => void,
-    setActiveItemUrl: (val: string | null) => void,
 ) {
     const item = items.find((i) => i.id === id)
     if (item?.status === 'Downloading') {
         try {
             await window.api.youtube.cancelDownload()
         } catch {}
-        setIsDownloading(false)
-        setActiveItemUrl(null)
     }
 
     if (item?.savePath && item.status !== 'Complete') {
@@ -89,23 +84,20 @@ export async function deleteItemById(
 export async function deleteSelectedItems(
     items: DownloadItem[],
     setItems: React.Dispatch<React.SetStateAction<DownloadItem[]>>,
-    setIsDownloading: (val: boolean) => void,
-    setActiveItemUrl: (val: string | null) => void,
 ) {
-    const selectedItems = items.filter((i) => i.selected)
-    const hasDownloadingSelected = selectedItems.some(
+    const hasSelection = items.some((i) => i.selected)
+    const targetItems = hasSelection ? items.filter((i) => i.selected) : items
+    const hasDownloading = targetItems.some(
         (i) => i.status === 'Downloading',
     )
 
-    if (hasDownloadingSelected) {
+    if (hasDownloading) {
         try {
             await window.api.youtube.cancelDownload()
         } catch {}
-        setIsDownloading(false)
-        setActiveItemUrl(null)
     }
 
-    for (const item of selectedItems) {
+    for (const item of targetItems) {
         if (item.savePath && item.status !== 'Complete') {
             await window.files
                 .deletePartialFile(item.savePath)
@@ -113,5 +105,7 @@ export async function deleteSelectedItems(
         }
     }
 
-    setItems((prev) => prev.filter((i) => !i.selected))
+    setItems((prev) =>
+        prev.filter((i) => (hasSelection ? !i.selected : false)),
+    )
 }

@@ -33,7 +33,13 @@ export function AddUrlModal({
     onSubmit,
 }: AddUrlModalProps) {
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (loadingInfo) return
+                onOpenChange(nextOpen)
+            }}
+        >
             <DialogContent>
                 <form
                     onSubmit={(e) => {
@@ -46,8 +52,13 @@ export function AddUrlModal({
                     <DialogHeader>
                         <DialogTitle>Add URL</DialogTitle>
                         <DialogClose
+                            disabled={loadingInfo}
                             render={
-                                <DialogIconButton aria-label="Close">
+                                <DialogIconButton
+                                    aria-label="Close"
+                                    disabled={loadingInfo}
+                                    className="disabled:pointer-events-none disabled:opacity-40"
+                                >
                                     <X className="size-3.5" />
                                 </DialogIconButton>
                             }
@@ -68,6 +79,7 @@ export function AddUrlModal({
                                 placeholder="Add URL..."
                                 value={inputUrl}
                                 onChange={(e) => setInputUrl(e.target.value)}
+                                disabled={loadingInfo}
                             />
                         </InputRoot>
                         {error && (

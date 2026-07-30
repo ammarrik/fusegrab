@@ -1,8 +1,8 @@
+import type { DownloadItem } from './types'
+
 import { useState } from 'react'
 
 import { Folder, FolderOpen, Video } from '#/components/icons'
-
-import type { DownloadItem } from './types'
 
 interface DownloaderSidebarProps {
     items: DownloadItem[]
@@ -74,7 +74,9 @@ export function DownloaderSidebar({
                         >
                             <div className="flex min-w-0 items-center gap-2.5">
                                 <Video className="text-primary h-4 w-4 shrink-0" />
-                                <span className="truncate">Individual Videos</span>
+                                <span className="truncate">
+                                    Individual Videos
+                                </span>
                             </div>
                             <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                 {individualCount}
@@ -84,8 +86,10 @@ export function DownloaderSidebar({
                         {/* Collapsible Channels & Playlists Section */}
                         <button
                             type="button"
-                            onClick={() => setIsChannelsExpanded((prev) => !prev)}
-                            className="text-foreground/80 hover:bg-muted hover:text-foreground flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer"
+                            onClick={() =>
+                                setIsChannelsExpanded((prev) => !prev)
+                            }
+                            className="text-foreground/80 hover:bg-muted hover:text-foreground flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors"
                         >
                             <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                                 {isChannelsExpanded ? (
@@ -110,9 +114,11 @@ export function DownloaderSidebar({
                                         key={ch.name}
                                         type="button"
                                         onClick={() =>
-                                            setActiveFilter(`channel:${ch.name}`)
+                                            setActiveFilter(
+                                                `channel:${ch.name}`,
+                                            )
                                         }
-                                        className={`flex items-center justify-between rounded-lg pl-9 pr-2.5 py-2 text-xs font-medium transition-colors w-full ${
+                                        className={`flex w-full items-center justify-between rounded-lg py-2 pr-2.5 pl-9 text-xs font-medium transition-colors ${
                                             activeFilter ===
                                             `channel:${ch.name}`
                                                 ? 'bg-accent text-foreground'
@@ -120,7 +126,7 @@ export function DownloaderSidebar({
                                         }`}
                                         title={ch.name}
                                     >
-                                        <span className="truncate min-w-0">
+                                        <span className="min-w-0 truncate">
                                             {ch.name}
                                         </span>
                                         <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
