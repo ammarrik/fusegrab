@@ -2,9 +2,11 @@ import type { DownloadItem } from './types'
 
 import { useEffect, useRef, useState } from 'react'
 
-import { Download, Search } from '#/components/icons'
+import { Search } from '#/components/icons'
 import { InputField, InputIcon, InputRoot } from '#/components/ui/input'
 import { useWindowDrag } from '#/hooks/use-window-drag'
+
+import appLogo from '../../../../assets/icon.rounded.png'
 
 import { AddUrlModal } from './add-dialog'
 import { FileMissingDialog } from './file-missing-dialog'
@@ -650,9 +652,11 @@ export function YoutubeDownloader() {
 
                 {/* Centered App Title */}
                 <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
-                    <div className="bg-primary text-primary-foreground flex h-5.5 w-5.5 items-center justify-center rounded-md shadow-xs">
-                        <Download className="h-3 w-3" />
-                    </div>
+                    <img
+                        src={appLogo}
+                        alt="Fusemass"
+                        className="h-5 w-5 rounded-xs object-contain shadow-xs"
+                    />
                     <span className="text-foreground text-xs font-semibold tracking-wide">
                         Fusemass
                     </span>

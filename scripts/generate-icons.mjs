@@ -33,6 +33,102 @@ const SPLASH_GRAY_MAX = 255 // keep white/background pixels white (untinted)
 // Apple's icon grid uses a corner radius of ~22.37% of the icon's width.
 const CORNER_RADIUS_RATIO = 0.2237
 
+function processSourceImage(png) {
+    const { width: w, height: h } = png
+
+    // Find bounding box of dark/non-white pixels (the black squircle content)
+    let minX = w,
+        maxX = 0,
+        minY = h,
+        maxY = 0
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4
+            const r = png.data[idx],
+                g = png.data[idx + 1],
+                b = png.data[idx + 2]
+            if (r < 220 || g < 220 || b < 220) {
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
+            }
+        }
+    }
+
+    // Fall back to center crop if no dark content found
+    if (minX >= maxX || minY >= maxY) {
+        return applyRoundedCorners(centerCropSquare(png))
+    }
+
+    const contentW = maxX - minX + 1
+    const contentH = maxY - minY + 1
+    const size = Math.max(contentW, contentH)
+
+    const targetSize = 1024
+    const out = new PNG({ width: targetSize, height: targetSize })
+
+    const cx = Math.round((minX + maxX) / 2)
+    const cy = Math.round((minY + maxY) / 2)
+    const cropX = cx - Math.floor(size / 2)
+    const cropY = cy - Math.floor(size / 2)
+    const scale = targetSize / size
+
+    for (let y = 0; y < targetSize; y++) {
+        for (let x = 0; x < targetSize; x++) {
+            const srcX = Math.round(cropX + x / scale)
+            const srcY = Math.round(cropY + y / scale)
+            const outIdx = (y * targetSize + x) * 4
+            if (srcX >= 0 && srcX < w && srcY >= 0 && srcY < h) {
+                const srcIdx = (srcY * w + srcX) * 4
+                out.data[outIdx] = png.data[srcIdx]
+                out.data[outIdx + 1] = png.data[srcIdx + 1]
+                out.data[outIdx + 2] = png.data[srcIdx + 2]
+                out.data[outIdx + 3] = png.data[srcIdx + 3]
+            } else {
+                out.data[outIdx + 3] = 0
+            }
+        }
+    }
+
+    // Flood fill background connected to outer borders to set alpha = 0 for white corners
+    const visited = new Uint8Array(targetSize * targetSize)
+    const queue = []
+    for (let x = 0; x < targetSize; x++) {
+        queue.push(x, 0)
+        queue.push(x, targetSize - 1)
+    }
+    for (let y = 1; y < targetSize - 1; y++) {
+        queue.push(0, y)
+        queue.push(targetSize - 1, y)
+    }
+
+    let head = 0
+    while (head < queue.length) {
+        const x = queue[head++]
+        const y = queue[head++]
+        const pos = y * targetSize + x
+        if (visited[pos]) continue
+
+        const idx = pos * 4
+        const r = out.data[idx],
+            g = out.data[idx + 1],
+            b = out.data[idx + 2]
+
+        if (r > 160 && g > 160 && b > 160) {
+            visited[pos] = 1
+            out.data[idx + 3] = 0
+
+            if (x > 0) queue.push(x - 1, y)
+            if (x < targetSize - 1) queue.push(x + 1, y)
+            if (y > 0) queue.push(x, y - 1)
+            if (y < targetSize - 1) queue.push(x, y + 1)
+        }
+    }
+
+    return applyRoundedCorners(out)
+}
+
 function centerCropSquare(png) {
     const size = Math.min(png.width, png.height)
     if (size === png.width && size === png.height) return png
@@ -158,12 +254,12 @@ async function writeSplashIcon(roundedPng) {
     const dataUri = `data:image/png;base64,${PNG.sync.write(gray).toString('base64')}`
     const html = await readFile(INDEX_HTML, 'utf8')
     const next = html.replace(
-        /(<img id="splash-icon"[^>]*\ssrc=")[^"]*(")/,
+        /(<img[\s\S]*?id="splash-icon"[\s\S]*?\ssrc=")[^"]*(")/,
         `$1${dataUri}$2`,
     )
     if (next === html) {
         console.warn(
-            'Warning: could not find <img id="splash-icon" ... src="…"> in index.html; splash icon not updated.',
+            'Warning: could not find <img ... id="splash-icon" ... src="…"> in index.html; splash icon not updated.',
         )
         return
     }
@@ -184,8 +280,7 @@ async function main() {
     }
 
     const png = PNG.sync.read(srcBuffer)
-    const square = centerCropSquare(png)
-    const rounded = applyRoundedCorners(square)
+    const rounded = processSourceImage(png)
     const roundedBuffer = PNG.sync.write(rounded)
 
     // Keep the rounded master around for the runtime window icon.
