@@ -510,7 +510,8 @@ export function YoutubeDownloader() {
 
                 let savePath: string
                 if (item.isSingleUrl) {
-                    savePath = `${targetDir.replace(/\/$/, '')}/${sanitized}.${ext}`
+                    const individualDir = `${targetDir.replace(/\/$/, '')}/Individual Videos`
+                    savePath = `${individualDir}/${sanitized}.${ext}`
                 } else {
                     const channelSubfolder = sanitizeFilename(
                         item.channelName || 'Uncategorized',
