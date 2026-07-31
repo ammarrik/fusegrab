@@ -231,6 +231,23 @@ export async function downloadYoutubeVideo(
         return Math.max(maxEmittedPercent, Math.min(95, mapped))
     }
 
+function parsePercentFromLine(line: string): number | null {
+    const ytDlpMatch = line.match(/\[download\]\s+([\d.]+)%/)
+    if (ytDlpMatch) {
+        const val = parseFloat(ytDlpMatch[1])
+        return isNaN(val) ? null : val
+    }
+
+    const aria2Match =
+        line.match(/\[#\w+.*?\(([\d.]+)%\)/) || line.match(/\[#\w+.*?\s+([\d.]+)%/)
+    if (aria2Match) {
+        const val = parseFloat(aria2Match[1])
+        return isNaN(val) ? null : val
+    }
+
+    return null
+}
+
     return new Promise((resolve, reject) => {
         proc.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n')
@@ -246,60 +263,10 @@ export async function downloadYoutubeVideo(
                     continue
                 }
 
-                if (line.includes('[download]')) {
-                    // Detect merge phase
-                    if (
-                        line.includes('[Merger]') ||
-                        line.includes('Merging') ||
-                        line.includes('[ffmpeg]') ||
-                        line.includes('Deleting original file')
-                    ) {
-                        maxEmittedPercent = Math.max(maxEmittedPercent, 99)
-                        const p = {
-                            downloadedBytes: 0,
-                            totalBytes: 0,
-                            percent: maxEmittedPercent,
-                        }
-                        updateState({ progress: p })
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('youtube:progress', p)
-                        }
-                        continue
-                    }
-
-                    const match = line.match(/\[download\]\s+([\d.]+)%/)
-                    if (match) {
-                        const rawPercent = parseFloat(match[1])
-                        if (!isNaN(rawPercent)) {
-                            // Detect stream switch via large percent drop
-                            if (
-                                rawPercent < lastRawPercent - 20 &&
-                                lastRawPercent > 50
-                            ) {
-                                currentStream++
-                            }
-                            lastRawPercent = rawPercent
-
-                            const weightedPercent =
-                                computeWeightedPercent(rawPercent)
-                            maxEmittedPercent = weightedPercent
-
-                            const p = {
-                                downloadedBytes: 0,
-                                totalBytes: 0,
-                                percent: Math.round(weightedPercent * 10) / 10,
-                            }
-                            updateState({ progress: p })
-                            if (win && !win.isDestroyed()) {
-                                win.webContents.send('youtube:progress', p)
-                            }
-                        }
-                    }
-                }
-
-                // Detect merge/ffmpeg lines outside [download] blocks
+                // Detect merge phase
                 if (
                     line.includes('[Merger]') ||
+                    line.includes('Merging') ||
                     line.includes('[ffmpeg]') ||
                     line.includes('Deleting original file')
                 ) {
@@ -308,6 +275,32 @@ export async function downloadYoutubeVideo(
                         downloadedBytes: 0,
                         totalBytes: 0,
                         percent: maxEmittedPercent,
+                    }
+                    updateState({ progress: p })
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send('youtube:progress', p)
+                    }
+                    continue
+                }
+
+                const rawPercent = parsePercentFromLine(line)
+                if (rawPercent !== null) {
+                    // Detect stream switch via large percent drop
+                    if (
+                        rawPercent < lastRawPercent - 20 &&
+                        lastRawPercent > 50
+                    ) {
+                        currentStream++
+                    }
+                    lastRawPercent = rawPercent
+
+                    const weightedPercent = computeWeightedPercent(rawPercent)
+                    maxEmittedPercent = weightedPercent
+
+                    const p = {
+                        downloadedBytes: 0,
+                        totalBytes: 0,
+                        percent: Math.round(weightedPercent * 10) / 10,
                     }
                     updateState({ progress: p })
                     if (win && !win.isDestroyed()) {

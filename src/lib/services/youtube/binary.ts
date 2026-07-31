@@ -175,8 +175,9 @@ export async function ensureAria2Binary(
             downloadUrl =
                 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
         } else if (process.platform === 'darwin') {
+            const arch = process.arch === 'arm64' ? 'arm64' : 'x86_64'
             downloadUrl =
-                'https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-1.37.0-osx-darwin-64bit.tar.gz'
+                `https://github.com/q741451/aria2c-macos-standalone-binary/releases/download/v1.0.0/aria2c-macos-${arch}.tar.gz`
         } else {
             logger?.warn(
                 'Automatic aria2 download is not supported on this platform.',
@@ -314,7 +315,7 @@ export async function getAntiRateLimitArgs(
             '--external-downloader',
             aria2Path,
             '--external-downloader-args',
-            'aria2c:-j 16 -x 16 -s 16 -k 1M --connect-timeout=5 --timeout=5 --max-tries=3 --summary-interval=0',
+            'aria2c:-j 16 -x 16 -s 16 -k 1M --connect-timeout=5 --timeout=5 --max-tries=3 --summary-interval=1',
         )
     } else {
         logger?.info(

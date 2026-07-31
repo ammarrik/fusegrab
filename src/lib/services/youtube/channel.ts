@@ -353,25 +353,27 @@ export async function downloadYoutubeChannel(
                     logger.info(`Target destination: ${videoTitle}`)
                 }
 
-                if (line.includes('[download]')) {
-                    const match = line.match(/\[download\]\s+([\d.]+)%/)
-                    if (match) {
-                        const percent = parseFloat(match[1])
-                        if (!isNaN(percent)) {
-                            const cp: ChannelProgressEvent = {
-                                currentItem,
-                                totalItems,
-                                percent: Math.min(100, percent),
-                                videoTitle,
-                                status: 'downloading',
-                            }
-                            updateState({ channelProgress: cp })
-                            if (win && !win.isDestroyed()) {
-                                win.webContents.send(
-                                    'youtube:channel-progress',
-                                    cp,
-                                )
-                            }
+                const ytDlpPercent = line.match(/\[download\]\s+([\d.]+)%/)
+                const aria2Percent =
+                    line.match(/\[#\w+.*?\(([\d.]+)%\)/) || line.match(/\[#\w+.*?\s+([\d.]+)%/)
+                const percentMatch = ytDlpPercent || aria2Percent
+
+                if (percentMatch) {
+                    const percent = parseFloat(percentMatch[1])
+                    if (!isNaN(percent)) {
+                        const cp: ChannelProgressEvent = {
+                            currentItem,
+                            totalItems,
+                            percent: Math.min(100, percent),
+                            videoTitle,
+                            status: 'downloading',
+                        }
+                        updateState({ channelProgress: cp })
+                        if (win && !win.isDestroyed()) {
+                            win.webContents.send(
+                                'youtube:channel-progress',
+                                cp,
+                            )
                         }
                     }
                 }

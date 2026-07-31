@@ -14,11 +14,12 @@ export async function pauseSelectedItems(
         } catch {}
     }
 
+    const targetIds = new Set(targetItems.map((i) => i.id))
+
     setItems((prev) =>
         prev.map((i) => {
-            const isTarget = hasSelection ? i.selected : true
             if (
-                isTarget &&
+                targetIds.has(i.id) &&
                 (i.status === 'Downloading' || i.status === 'Queued')
             ) {
                 return { ...i, status: 'Paused', statusStage: undefined }
@@ -103,5 +104,7 @@ export async function deleteSelectedItems(
         }
     }
 
-    setItems((prev) => prev.filter((i) => (hasSelection ? !i.selected : false)))
+    const targetIds = new Set(targetItems.map((i) => i.id))
+
+    setItems((prev) => prev.filter((i) => !targetIds.has(i.id)))
 }
