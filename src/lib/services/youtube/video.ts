@@ -19,6 +19,7 @@ import {
     ensureYtDlpBinary,
     getAntiRateLimitArgs,
     getJsRuntimeArgs,
+    spawnOptions,
 } from './binary'
 import { buildVideoFormatSelector } from './format'
 
@@ -153,39 +154,43 @@ export async function downloadYoutubeVideo(
         `Anti-rate-limit arguments: ${JSON.stringify(antiRateLimitArgs)}`,
     )
 
+    const resolvedFfmpegPath = await ensureFfmpegBinary(ffmpegPath, logger)
+    const canMerge = Boolean(resolvedFfmpegPath)
+
     const args: string[] = [
         ...antiRateLimitArgs,
         ...(await getJsRuntimeArgs(logger)),
         '--newline',
-        '--merge-output-format',
-        'mp4',
         '--no-mtime',
     ]
 
-    const resolvedFfmpegPath = await ensureFfmpegBinary(ffmpegPath, logger)
     if (resolvedFfmpegPath) {
         args.push('--ffmpeg-location', resolvedFfmpegPath)
+        // Only meaningful with ffmpeg present; without it yt-dlp cannot mux.
+        args.push('--merge-output-format', 'mp4')
         logger.info(`ffmpeg binary located at: ${resolvedFfmpegPath}`)
     } else {
-        logger.warn('ffmpeg binary not found at default location.')
+        logger.warn(
+            'ffmpeg binary not found. Falling back to a single pre-merged format; quality may be lower than requested.',
+        )
     }
 
     const isAudioOnly =
         qualityItag === -1 || savePath.toLowerCase().endsWith('.mp3')
 
     if (isAudioOnly) {
-        args.push('-f', 'bestaudio', '-x', '--audio-format', 'mp3')
+        args.push('-f', 'bestaudio')
+        if (canMerge) {
+            // Transcoding to mp3 is an ffmpeg postprocessor.
+            args.push('-x', '--audio-format', 'mp3')
+        }
     } else {
         const targetHeight =
             height ||
             (typeof qualityItag === 'number' && qualityItag > 0
                 ? qualityItag
                 : null)
-        if (targetHeight) {
-            args.push('-f', buildVideoFormatSelector(targetHeight))
-        } else {
-            args.push('-f', buildVideoFormatSelector())
-        }
+        args.push('-f', buildVideoFormatSelector(targetHeight, canMerge))
     }
 
     args.push('-o', savePath, cleanUrl)
@@ -202,7 +207,7 @@ export async function downloadYoutubeVideo(
         channelProgress: null,
     })
 
-    const proc = spawn(ytDlpPath, args, { detached: true })
+    const proc = spawn(ytDlpPath, args, spawnOptions())
     onProcessStart(proc)
     logger.info(`yt-dlp child process spawned with PID ${proc.pid}`)
 

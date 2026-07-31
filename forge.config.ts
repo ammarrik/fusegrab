@@ -1,4 +1,37 @@
 import { VitePlugin } from '@electron-forge/plugin-vite'
+import { copyFile, mkdir } from 'node:fs/promises'
+import path from 'node:path'
+
+// @ts-ignore - mjs has no declaration file
+import { fetchFfmpeg, getBinaryName } from './scripts/fetch-ffmpeg.mjs'
+
+/**
+ * Copies a target-specific static ffmpeg into the packaged app's resources dir.
+ *
+ * ffmpeg must be a real file on disk that the OS can exec, so it cannot live
+ * inside app.asar. `buildPath` here is `<staging>/resources/app` — the directory
+ * that gets packed into app.asar and then *deleted*. Its parent is the resources
+ * dir, which survives packing, so the binary goes there and is read at runtime
+ * via `process.resourcesPath` (see resolveFfmpegBinary in
+ * src/lib/services/youtube/binary.ts).
+ *
+ * Deriving the resources dir from `buildPath` rather than hardcoding it keeps
+ * this correct on macOS, where the layout is Contents/Resources.
+ */
+async function bundleFfmpeg(
+    buildPath: string,
+    platform: string,
+    arch: string,
+): Promise<void> {
+    const resourcesDir = path.resolve(buildPath, '..')
+    const ffmpegDir = path.join(resourcesDir, 'ffmpeg')
+    await mkdir(ffmpegDir, { recursive: true })
+
+    const cached = await fetchFfmpeg(platform, arch, console.log)
+    const dest = path.join(ffmpegDir, getBinaryName(platform))
+    await copyFile(cached, dest)
+    console.log(`Bundled ffmpeg for ${platform}-${arch}: ${dest}`)
+}
 
 const config = {
     packagerConfig: {
@@ -25,6 +58,23 @@ const config = {
         // The rounded PNG is shipped so the runtime window/taskbar icon works
         // in packaged builds (see src/main.ts).
         extraResource: ['./assets/icon.rounded.png'],
+        // @electron/packager wraps these hooks in util.promisify, so they must
+        // use the callback contract — an async function that never calls back
+        // hangs the build.
+        afterCopy: [
+            (
+                buildPath: string,
+                _electronVersion: string,
+                platform: string,
+                arch: string,
+                callback: (err?: Error | null) => void,
+            ) => {
+                bundleFfmpeg(buildPath, platform, arch).then(
+                    () => callback(),
+                    (err) => callback(err),
+                )
+            },
+        ],
         ignore: (file: string) => {
             if (!file) return false
             if (file.startsWith('/.vite')) return false

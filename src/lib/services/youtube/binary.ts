@@ -19,6 +19,28 @@ import { gunzipSync } from 'node:zlib'
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
 const FFMPEG_STATIC_RELEASE = 'b6.1.1'
 
+/**
+ * eugeneware/ffmpeg-static publishes no win32-arm64 asset — the b6.1.1 release
+ * has ffmpeg-win32-x64 and nothing else for Windows. Asking it for
+ * `ffmpeg-win32-arm64.gz` 404s, which is why merging silently failed on ARM
+ * Windows: yt-dlp fetched video and audio as separate streams and left them
+ * unmerged. BtbN is the maintained source of static Windows ARM64 builds.
+ */
+const BTBN_WIN_ARM64_ASSET = 'ffmpeg-n7.1-latest-winarm64-lgpl-7.1.zip'
+
+/** Hiding the console keeps a window from flashing up per invocation on Windows. */
+const NO_WINDOW = { windowsHide: true } as const
+
+/**
+ * Windows: `windowsHide` hides the console; `detached` is ignored (use taskkill).
+ * POSIX: `detached` enables process-group kill; `windowsHide` is ignored.
+ */
+export function spawnOptions() {
+    return process.platform === 'win32'
+        ? { windowsHide: true }
+        : { detached: true }
+}
+
 function getBinaryName(): string {
     if (process.platform === 'win32') return 'yt-dlp.exe'
     if (process.platform === 'darwin') return 'yt-dlp_macos'
@@ -137,14 +159,47 @@ function getFfmpegBinaryName(): string {
     return 'ffmpeg'
 }
 
-function getFfmpegDownloadUrl(): string | null {
-    const supportedPlatforms = new Set(['darwin', 'linux', 'win32'])
-    const supportedArchs = new Set(['x64', 'ia32', 'arm64', 'arm'])
+type FfmpegSource = { url: string; kind: 'gz' | 'zip' }
 
-    if (!supportedPlatforms.has(process.platform)) return null
-    if (!supportedArchs.has(process.arch)) return null
+/**
+ * Ordered download candidates, best first. Windows ARM64 gets a native BtbN
+ * build, then falls back to the x64 static build, which Windows 11 on ARM runs
+ * under emulation — slower than native, but it merges correctly, and a slow
+ * merge beats no merge.
+ */
+function getFfmpegSources(): FfmpegSource[] {
+    const { platform, arch } = process
+    const eugeneware = (target: string): FfmpegSource => ({
+        url: `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_RELEASE}/ffmpeg-${target}.gz`,
+        kind: 'gz',
+    })
 
-    return `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_RELEASE}/ffmpeg-${process.platform}-${process.arch}.gz`
+    if (platform === 'win32') {
+        if (arch === 'arm64') {
+            return [
+                {
+                    url: `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${BTBN_WIN_ARM64_ASSET}`,
+                    kind: 'zip',
+                },
+                eugeneware('win32-x64'),
+            ]
+        }
+        if (arch === 'x64' || arch === 'ia32') {
+            return [eugeneware('win32-x64')]
+        }
+        return []
+    }
+
+    if (platform === 'darwin') {
+        return [eugeneware(arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64')]
+    }
+
+    if (platform === 'linux') {
+        const supported = new Set(['x64', 'ia32', 'arm64', 'arm'])
+        return supported.has(arch) ? [eugeneware(`linux-${arch}`)] : []
+    }
+
+    return []
 }
 
 function getRealAsarPath(candidate: string): string {
@@ -176,7 +231,82 @@ function uniquePaths(paths: Array<string | null | undefined>): string[] {
     return result
 }
 
+/**
+ * Extract ffmpeg from a BtbN zip. The archive nests it at
+ * `ffmpeg-<build>/bin/ffmpeg.exe`, so unpack to a scratch dir and hunt for the
+ * executable rather than assuming the prefix.
+ */
+async function extractFfmpegFromZip(
+    archivePath: string,
+    binDir: string,
+    logger?: SessionLogger,
+): Promise<Buffer | null> {
+    const scratch = path.join(binDir, `ffmpeg_unzip_${Date.now()}`)
+    try {
+        mkdirSync(scratch, { recursive: true })
+        await new Promise<void>((resolve, reject) => {
+            execFile(
+                'powershell',
+                [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-Command',
+                    `Expand-Archive -LiteralPath "${archivePath}" -DestinationPath "${scratch}" -Force`,
+                ],
+                NO_WINDOW,
+                (err) => (err ? reject(err) : resolve()),
+            )
+        })
+
+        const find = (dir: string): string | null => {
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name)
+                if (entry.isDirectory()) {
+                    const hit = find(full)
+                    if (hit) return hit
+                } else if (entry.name.toLowerCase() === 'ffmpeg.exe') {
+                    return full
+                }
+            }
+            return null
+        }
+
+        const found = find(scratch)
+        if (!found) {
+            logger?.warn('ffmpeg.exe was not found inside the archive.')
+            return null
+        }
+        return readFileSync(found)
+    } finally {
+        await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
+        await rm(archivePath, { force: true }).catch(() => undefined)
+    }
+}
+
+/**
+ * Resolution is cached for the process lifetime. Without this, a failed lookup
+ * re-ran the full probe — including a 404 fetch — once per video in a channel
+ * download, which is what filled the session log with repeated HTTP 404 lines.
+ */
+let cachedFfmpegPath: string | null | undefined
+
 export async function ensureFfmpegBinary(
+    bundledPath?: string | null,
+    logger?: SessionLogger,
+): Promise<string | null> {
+    if (cachedFfmpegPath !== undefined) {
+        if (cachedFfmpegPath && hasUsableBinary(cachedFfmpegPath)) {
+            return cachedFfmpegPath
+        }
+        if (cachedFfmpegPath === null) return null
+    }
+
+    const resolved = await resolveFfmpegBinary(bundledPath, logger)
+    cachedFfmpegPath = resolved
+    return resolved
+}
+
+async function resolveFfmpegBinary(
     bundledPath?: string | null,
     logger?: SessionLogger,
 ): Promise<string | null> {
@@ -185,21 +315,25 @@ export async function ensureFfmpegBinary(
     const resourcesPath = (
         process as NodeJS.Process & { resourcesPath?: string }
     ).resourcesPath
-    const resourcePath = resourcesPath
-        ? path.join(
-              resourcesPath,
-              'app.asar.unpacked',
-              'node_modules',
-              'ffmpeg-static',
-              getFfmpegBinaryName(),
-          )
-        : null
+    const resourceCandidates = resourcesPath
+        ? [
+              // Bundled by scripts/fetch-ffmpeg.mjs via extraResource.
+              path.join(resourcesPath, 'ffmpeg', getFfmpegBinaryName()),
+              path.join(
+                  resourcesPath,
+                  'app.asar.unpacked',
+                  'node_modules',
+                  'ffmpeg-static',
+                  getFfmpegBinaryName(),
+              ),
+          ]
+        : []
 
     for (const candidate of uniquePaths([
         process.env.FFMPEG_BIN,
         bundledPath,
         bundledPath ? getRealAsarPath(bundledPath) : null,
-        resourcePath,
+        ...resourceCandidates,
         binPath,
     ])) {
         if (hasUsableBinary(candidate)) {
@@ -214,10 +348,15 @@ export async function ensureFfmpegBinary(
     try {
         const checkCmd = process.platform === 'win32' ? 'where' : 'which'
         const sysPath = await new Promise<string>((resolve, reject) => {
-            execFile(checkCmd, [getFfmpegBinaryName()], (err, stdout) => {
-                if (err || !stdout.trim()) return reject(err)
-                resolve(stdout.trim().split('\n')[0].trim())
-            })
+            execFile(
+                checkCmd,
+                [getFfmpegBinaryName()],
+                NO_WINDOW,
+                (err, stdout) => {
+                    if (err || !stdout.trim()) return reject(err)
+                    resolve(stdout.trim().split('\n')[0].trim())
+                },
+            )
         })
         if (hasUsableBinary(sysPath)) {
             logger?.info(`Using system ffmpeg binary at: ${sysPath}`)
@@ -225,51 +364,69 @@ export async function ensureFfmpegBinary(
         }
     } catch {}
 
-    const downloadUrl = getFfmpegDownloadUrl()
-    if (!downloadUrl) {
+    const sources = getFfmpegSources()
+    if (sources.length === 0) {
         logger?.warn(
-            'Automatic ffmpeg download is not supported on this platform.',
+            `Automatic ffmpeg download is not supported on ${process.platform}-${process.arch}.`,
         )
         return null
     }
 
-    try {
-        mkdirSync(binDir, { recursive: true })
-        logger?.info(`Downloading ffmpeg binary from ${downloadUrl}...`)
+    mkdirSync(binDir, { recursive: true })
 
-        const res = await fetch(downloadUrl)
-        if (!res.ok || !res.body) {
+    for (const source of sources) {
+        try {
+            logger?.info(`Downloading ffmpeg binary from ${source.url}...`)
+            const res = await fetch(source.url, { redirect: 'follow' })
+            if (!res.ok) {
+                logger?.warn(
+                    `Failed to fetch ffmpeg binary: HTTP ${res.status} ${res.statusText}`,
+                )
+                continue
+            }
+
+            const payload = Buffer.from(await res.arrayBuffer())
+            let binary: Buffer | null
+            if (source.kind === 'zip') {
+                const archivePath = path.join(
+                    binDir,
+                    `ffmpeg_archive_${Date.now()}.zip`,
+                )
+                writeFileSync(archivePath, payload)
+                binary = await extractFfmpegFromZip(archivePath, binDir, logger)
+            } else {
+                binary = gunzipSync(payload)
+            }
+
+            if (!binary || binary.length < 1000) {
+                logger?.warn(
+                    'Downloaded ffmpeg binary is too small, likely corrupt.',
+                )
+                continue
+            }
+
+            const tmpPath = `${binPath}.tmp_${Date.now()}`
+            writeFileSync(tmpPath, binary)
+            if (process.platform !== 'win32') {
+                await chmod(tmpPath, 0o755)
+            }
+            await rename(tmpPath, binPath)
+            logger?.info(`ffmpeg binary successfully installed at ${binPath}`)
+            return binPath
+        } catch (err: any) {
             logger?.warn(
-                `Failed to fetch ffmpeg binary: HTTP ${res.status} ${res.statusText}`,
+                `Failed to download/load ffmpeg from ${source.url}: ${err?.message || String(err)}`,
+                err,
             )
-            return null
         }
-
-        const compressed = Buffer.from(await res.arrayBuffer())
-        const decompressed = gunzipSync(compressed)
-        if (decompressed.length < 1000) {
-            logger?.warn(
-                'Downloaded ffmpeg binary is too small, likely corrupt.',
-            )
-            return null
-        }
-
-        const tmpPath = `${binPath}.tmp_${Date.now()}`
-        writeFileSync(tmpPath, decompressed)
-        if (process.platform !== 'win32') {
-            await chmod(tmpPath, 0o755)
-        }
-        await rename(tmpPath, binPath)
-        logger?.info(`ffmpeg binary successfully installed at ${binPath}`)
-        return binPath
-    } catch (err: any) {
-        logger?.warn(
-            `Failed to download/load ffmpeg binary: ${err?.message || String(err)}`,
-            err,
-        )
     }
 
-    return hasUsableBinary(binPath) ? binPath : null
+    if (hasUsableBinary(binPath)) return binPath
+
+    logger?.error(
+        'No ffmpeg binary could be resolved. Video and audio streams cannot be merged; downloads will fall back to a single pre-merged format.',
+    )
+    return null
 }
 
 function getAria2BinaryName(): string {
@@ -297,7 +454,7 @@ export async function ensureAria2Binary(
     try {
         const checkCmd = process.platform === 'win32' ? 'where' : 'which'
         const sysPath = await new Promise<string>((resolve, reject) => {
-            execFile(checkCmd, [binName], (err, stdout) => {
+            execFile(checkCmd, [binName], NO_WINDOW, (err, stdout) => {
                 if (err || !stdout.trim()) return reject(err)
                 resolve(stdout.trim().split('\n')[0].trim())
             })
@@ -359,17 +516,23 @@ export async function ensureAria2Binary(
                 execFile(
                     'powershell',
                     [
-                        '-command',
-                        `Expand-Archive -Path "${tmpArchive}" -DestinationPath "${binDir}" -Force`,
+                        '-NoProfile',
+                        '-NonInteractive',
+                        '-Command',
+                        `Expand-Archive -LiteralPath "${tmpArchive}" -DestinationPath "${binDir}" -Force`,
                     ],
+                    NO_WINDOW,
                     (err) => (err ? reject(err) : resolve(true)),
                 )
             })
         } else {
             logger?.info('Extracting macOS aria2 tar archive...')
             await new Promise((resolve, reject) => {
-                execFile('tar', ['-xzf', tmpArchive, '-C', binDir], (err) =>
-                    err ? reject(err) : resolve(true),
+                execFile(
+                    'tar',
+                    ['-xzf', tmpArchive, '-C', binDir],
+                    NO_WINDOW,
+                    (err) => (err ? reject(err) : resolve(true)),
                 )
             })
         }
@@ -421,11 +584,39 @@ export async function ensureAria2Binary(
 const DEFAULT_USER_AGENT =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-const NODE_FALLBACK_PATHS = [
-    '/opt/homebrew/bin/node',
-    '/usr/local/bin/node',
-    '/usr/bin/node',
-]
+const NODE_FALLBACK_PATHS =
+    process.platform === 'win32'
+        ? [
+              // Default installer location, plus the two common version managers.
+              path.join(
+                  process.env.ProgramFiles || 'C:\\Program Files',
+                  'nodejs',
+                  'node.exe',
+              ),
+              path.join(
+                  process.env['ProgramFiles(x86)'] ||
+                      'C:\\Program Files (x86)',
+                  'nodejs',
+                  'node.exe',
+              ),
+              path.join(
+                  process.env.APPDATA || '',
+                  'npm',
+                  'node.exe',
+              ),
+              path.join(
+                  process.env.LOCALAPPDATA || '',
+                  'fnm_multishells',
+                  'node.exe',
+              ),
+              path.join(
+                  process.env.LOCALAPPDATA || '',
+                  'Volta',
+                  'bin',
+                  'node.exe',
+              ),
+          ]
+        : ['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node']
 
 let cachedJsRuntime: string | null | undefined
 
@@ -448,18 +639,37 @@ async function resolveJsRuntime(
 
     const candidates: Array<string | null> = [process.env.NODE_BIN || null]
 
-    // A login shell sources the user's profile, exposing nvm/fnm/volta shims
-    // that the GUI process PATH does not have.
-    try {
-        const shell = process.env.SHELL || '/bin/zsh'
-        const fromShell = await new Promise<string>((resolve, reject) => {
-            execFile(shell, ['-lic', 'command -v node'], (err, stdout) => {
-                if (err || !stdout.trim()) return reject(err)
-                resolve(stdout.trim().split('\n').pop()!.trim())
+    if (process.platform === 'win32') {
+        // Windows has no login-shell equivalent, but it does inherit a usable
+        // PATH from Explorer, so `where` is enough to find a managed node.
+        try {
+            const fromWhere = await new Promise<string>((resolve, reject) => {
+                execFile('where', ['node.exe'], NO_WINDOW, (err, stdout) => {
+                    if (err || !stdout.trim()) return reject(err)
+                    resolve(stdout.trim().split('\n')[0].trim())
+                })
             })
-        })
-        candidates.push(fromShell)
-    } catch {}
+            candidates.push(fromWhere)
+        } catch {}
+    } else {
+        // A login shell sources the user's profile, exposing nvm/fnm/volta shims
+        // that the GUI process PATH does not have.
+        try {
+            const shell = process.env.SHELL || '/bin/zsh'
+            const fromShell = await new Promise<string>((resolve, reject) => {
+                execFile(
+                    shell,
+                    ['-lic', 'command -v node'],
+                    NO_WINDOW,
+                    (err, stdout) => {
+                        if (err || !stdout.trim()) return reject(err)
+                        resolve(stdout.trim().split('\n').pop()!.trim())
+                    },
+                )
+            })
+            candidates.push(fromShell)
+        } catch {}
+    }
 
     candidates.push(...NODE_FALLBACK_PATHS)
 
