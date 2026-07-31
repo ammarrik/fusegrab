@@ -17,6 +17,20 @@ const target = process.argv[2] ?? 'all'
 console.log(`[build-installers] Target: ${target}`)
 console.log(`[build-installers] Host OS: ${process.platform} (${process.arch})`)
 
+// Electron Forge's @electron/packager uses extract-zip, which has a known hang on
+// Node 26 due to yauzl stream handling changes. Require Node 22 or earlier.
+const nodeVersion = parseInt(process.version.split('.')[0].slice(1), 10)
+if (nodeVersion >= 26) {
+    console.error(`[build-installers] ERROR: Node ${process.version} detected.`)
+    console.error(
+        `[build-installers] Electron Forge packaging hangs on Node 26+ due to extract-zip compatibility.`,
+    )
+    console.error(`[build-installers] Switch to Node 22 LTS:`)
+    console.error(`[build-installers]   nvm use 22`)
+    console.error(`[build-installers]   pnpm run make:mac`)
+    process.exit(1)
+}
+
 const forgeCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 
 function runForgeMake(platform, arch) {
