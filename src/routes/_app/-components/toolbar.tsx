@@ -31,12 +31,11 @@ export function DownloaderToolbar({
     fetchingTitle,
 }: DownloaderToolbarProps) {
     const hasSelection = items.some((i) => i.selected)
-    const targetItems = hasSelection ? items.filter((i) => i.selected) : items
-    const hasActiveSelected = targetItems.some(
+    const selectedItems = items.filter((i) => i.selected)
+    const hasActiveSelected = selectedItems.some(
         (i) => i.status === 'Downloading' || i.status === 'Queued',
     )
-    const hasResumable = targetItems.some((i) => i.status !== 'Complete')
-    const hasItems = items.length > 0
+    const hasResumable = selectedItems.some((i) => i.status !== 'Complete')
 
     return (
         <div className="border-border bg-surface flex w-full shrink-0 items-center justify-between gap-2 overflow-x-auto border-b p-2 select-none">
@@ -60,44 +59,44 @@ export function DownloaderToolbar({
 
                 <div className="bg-border/60 mx-1 h-4 w-px" />
 
-                {/* Resume All / Pause All Toggle Button */}
+                {/* Resume / Pause Toggle Button */}
                 {hasActiveSelected ? (
                     <button
                         type="button"
                         onClick={onPauseSelected}
-                        disabled={!hasItems}
+                        disabled={!hasSelection || !hasActiveSelected}
                         className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                        title="Pause Downloads"
-                        aria-label="Pause Downloads"
+                        title="Pause Selected Downloads"
+                        aria-label="Pause Selected Downloads"
                     >
                         <Pause className="h-3.5 w-3.5 text-amber-500" />
-                        <span>Pause All</span>
+                        <span>Pause</span>
                     </button>
                 ) : (
                     <button
                         type="button"
                         onClick={onResumeSelected}
-                        disabled={!hasItems || !hasResumable}
+                        disabled={!hasSelection || !hasResumable}
                         className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                        title="Resume Downloads"
-                        aria-label="Resume Downloads"
+                        title="Resume Selected Downloads"
+                        aria-label="Resume Selected Downloads"
                     >
                         <Play className="text-success size-3.5" />
-                        <span>Resume All</span>
+                        <span>Resume</span>
                     </button>
                 )}
 
-                {/* Delete All */}
+                {/* Delete Button */}
                 <button
                     type="button"
                     onClick={onDeleteSelected}
-                    disabled={!hasItems}
+                    disabled={!hasSelection}
                     className="hover:bg-muted text-foreground/90 flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-                    title="Delete Items"
-                    aria-label="Delete Items"
+                    title="Delete Selected Items"
+                    aria-label="Delete Selected Items"
                 >
                     <Trash2 className="text-danger size-3.5" />
-                    <span>Delete All</span>
+                    <span>Delete</span>
                 </button>
 
                 <div className="bg-border/60 mx-1 h-4 w-px" />

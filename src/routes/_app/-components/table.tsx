@@ -39,6 +39,7 @@ interface DownloaderTableProps {
     allSelected: boolean
     isIndeterminate: boolean
     toggleSelectAll: (checked: boolean) => void
+    onToggleItemSelect?: (id: string, selected: boolean) => void
     onAddUrl: () => void
     onStartItem: (id: string) => void
     onStopItem: (id: string) => void
@@ -53,6 +54,7 @@ export function DownloaderTable({
     allSelected,
     isIndeterminate,
     toggleSelectAll,
+    onToggleItemSelect,
     onAddUrl,
     onStartItem,
     onStopItem,
@@ -186,19 +188,26 @@ export function DownloaderTable({
                                         <Checkbox
                                             checked={item.selected}
                                             onCheckedChange={(checked) => {
-                                                setItems((prev) =>
-                                                    prev.map((i) =>
-                                                        i.id === item.id
-                                                            ? {
-                                                                  ...i,
-                                                                  selected:
-                                                                      Boolean(
-                                                                          checked,
-                                                                      ),
-                                                              }
-                                                            : i,
-                                                    ),
-                                                )
+                                                if (onToggleItemSelect) {
+                                                    onToggleItemSelect(
+                                                        item.id,
+                                                        Boolean(checked),
+                                                    )
+                                                } else {
+                                                    setItems((prev) =>
+                                                        prev.map((i) =>
+                                                            i.id === item.id
+                                                                ? {
+                                                                      ...i,
+                                                                      selected:
+                                                                          Boolean(
+                                                                              checked,
+                                                                          ),
+                                                                  }
+                                                                : i,
+                                                        ),
+                                                    )
+                                                }
                                             }}
                                             aria-label={`Select ${item.name}`}
                                         />

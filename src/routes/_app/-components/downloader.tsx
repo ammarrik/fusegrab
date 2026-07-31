@@ -92,6 +92,33 @@ export function YoutubeDownloader() {
         )
     }
 
+    const [selectedByFilter, setSelectedByFilter] = useState<
+        Record<string, Set<string>>
+    >(() => {
+        const saved = localStorage.getItem('fuse_selected_by_filter')
+        if (saved) {
+            try {
+                const parsed: Record<string, string[]> = JSON.parse(saved)
+                const restored: Record<string, Set<string>> = {}
+                for (const k of Object.keys(parsed)) {
+                    restored[k] = new Set(parsed[k])
+                }
+                return restored
+            } catch {}
+        }
+        return {}
+    })
+
+    useEffect(() => {
+        const toSave: Record<string, string[]> = {}
+        for (const k of Object.keys(selectedByFilter)) {
+            if (selectedByFilter[k].size > 0) {
+                toSave[k] = Array.from(selectedByFilter[k])
+            }
+        }
+        localStorage.setItem('fuse_selected_by_filter', JSON.stringify(toSave))
+    }, [selectedByFilter])
+
     useEffect(() => {
         localStorage.setItem('fuse_download_items_v2', JSON.stringify(items))
     }, [items])
@@ -275,6 +302,11 @@ export function YoutubeDownloader() {
                     selected: true,
                 }
                 setItems((prev) => [newItem, ...prev])
+                setSelectedByFilter((prev) => {
+                    const currentSet = new Set(prev[activeFilter] || [])
+                    currentSet.add(newItem.id)
+                    return { ...prev, [activeFilter]: currentSet }
+                })
             } else if (type === 'channel') {
                 setIsFetchingVideos(true)
                 // Await initial batch loading before closing dialog
@@ -388,8 +420,8 @@ export function YoutubeDownloader() {
     }, [items, isDownloading])
 
     const handleStartSelectedDownloads = (targetItemId?: string) => {
-        const hasSelection = items.some((i) => i.selected)
-        const eligible = items.filter((i) => {
+        const hasSelection = filteredItems.some((i) => i.selected)
+        const eligible = filteredItems.filter((i) => {
             if (targetItemId) return i.id === targetItemId
             if (hasSelection) return i.selected && i.status !== 'Complete'
             return i.status !== 'Complete'
@@ -405,15 +437,11 @@ export function YoutubeDownloader() {
             setActiveItemUrl(firstItem.url)
         }
 
+        const targetIds = new Set(eligible.map((e) => e.id))
+
         setItems((prev) =>
             prev.map((i) => {
-                const isTarget = targetItemId
-                    ? i.id === targetItemId
-                    : hasSelection
-                      ? i.selected && i.status !== 'Complete'
-                      : i.status !== 'Complete'
-
-                if (isTarget) {
+                if (targetIds.has(i.id)) {
                     if (canStartImmediately && i.id === firstItem.id) {
                         return {
                             ...i,
@@ -571,9 +599,24 @@ export function YoutubeDownloader() {
         }
     }
 
+    const cleanupDeletedIds = (targetIds: string[]) => {
+        const removeSet = new Set(targetIds)
+        setSelectedByFilter((prev) => {
+            const next: Record<string, Set<string>> = {}
+            for (const key of Object.keys(prev)) {
+                const updated = new Set(prev[key])
+                for (const id of removeSet) {
+                    updated.delete(id)
+                }
+                next[key] = updated
+            }
+            return next
+        })
+    }
+
     const handlePauseSelected = () => {
         cancelledRef.current = true
-        pauseSelectedItems(items, setItems)
+        pauseSelectedItems(filteredItems, setItems)
     }
 
     const handleStopItem = (id: string) => {
@@ -583,12 +626,19 @@ export function YoutubeDownloader() {
 
     const handleDeleteItem = (id: string) => {
         cancelledRef.current = true
+        cleanupDeletedIds([id])
         deleteItemById(id, items, setItems)
     }
 
     const handleDeleteSelected = () => {
         cancelledRef.current = true
-        deleteSelectedItems(items, setItems)
+        const selectedInView = filteredItems.filter((i) => i.selected)
+        const targetIds =
+            selectedInView.length > 0
+                ? selectedInView.map((i) => i.id)
+                : filteredItems.map((i) => i.id)
+        cleanupDeletedIds(targetIds)
+        deleteSelectedItems(filteredItems, setItems)
     }
 
     const handleSelectFolder = async () => {
@@ -600,31 +650,41 @@ export function YoutubeDownloader() {
         }
     }
 
-    const filteredItems = items.filter((item) => {
-        const matchesSearch =
-            !searchQuery.trim() ||
-            item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.channelName?.toLowerCase().includes(searchQuery.toLowerCase())
+    const currentSelectedIds =
+        selectedByFilter[activeFilter] || new Set<string>()
 
-        if (!matchesSearch) return false
+    const filteredItems = items
+        .filter((item) => {
+            const matchesSearch =
+                !searchQuery.trim() ||
+                item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                item.channelName
+                    ?.toLowerCase()
+                    .includes(searchQuery.toLowerCase())
 
-        if (activeFilter === 'individual') {
-            return Boolean(item.isSingleUrl)
-        }
-        if (activeFilter.startsWith('channel:')) {
-            const targetChannel = activeFilter.replace('channel:', '')
-            return (
-                !item.isSingleUrl &&
-                (item.channelName || 'Uncategorized') === targetChannel
-            )
-        }
-        if (activeFilter === 'finished') return item.status === 'Complete'
-        if (activeFilter === 'unfinished') return item.status !== 'Complete'
-        if (activeFilter === 'paused')
-            return item.status === 'Paused' || item.status === 'Ready'
+            if (!matchesSearch) return false
 
-        return true
-    })
+            if (activeFilter === 'individual') {
+                return Boolean(item.isSingleUrl)
+            }
+            if (activeFilter.startsWith('channel:')) {
+                const targetChannel = activeFilter.replace('channel:', '')
+                return (
+                    !item.isSingleUrl &&
+                    (item.channelName || 'Uncategorized') === targetChannel
+                )
+            }
+            if (activeFilter === 'finished') return item.status === 'Complete'
+            if (activeFilter === 'unfinished') return item.status !== 'Complete'
+            if (activeFilter === 'paused')
+                return item.status === 'Paused' || item.status === 'Ready'
+
+            return true
+        })
+        .map((item) => ({
+            ...item,
+            selected: currentSelectedIds.has(item.id),
+        }))
 
     const allSelected =
         filteredItems.length > 0 && filteredItems.every((i) => i.selected)
@@ -632,12 +692,30 @@ export function YoutubeDownloader() {
     const isIndeterminate = someSelected && !allSelected
 
     const toggleSelectAll = (checked: boolean) => {
-        const filteredIds = new Set(filteredItems.map((i) => i.id))
-        setItems((prev) =>
-            prev.map((i) =>
-                filteredIds.has(i.id) ? { ...i, selected: checked } : i,
-            ),
-        )
+        const visibleIds = filteredItems.map((i) => i.id)
+        setSelectedByFilter((prev) => {
+            const nextSet = new Set(prev[activeFilter] || [])
+            for (const id of visibleIds) {
+                if (checked) {
+                    nextSet.add(id)
+                } else {
+                    nextSet.delete(id)
+                }
+            }
+            return { ...prev, [activeFilter]: nextSet }
+        })
+    }
+
+    const handleToggleItemSelect = (id: string, checked: boolean) => {
+        setSelectedByFilter((prev) => {
+            const nextSet = new Set(prev[activeFilter] || [])
+            if (checked) {
+                nextSet.add(id)
+            } else {
+                nextSet.delete(id)
+            }
+            return { ...prev, [activeFilter]: nextSet }
+        })
     }
 
     const handleOpenFolder = async (item: DownloadItem) => {
@@ -695,7 +773,7 @@ export function YoutubeDownloader() {
 
             {/* Action Toolbar */}
             <DownloaderToolbar
-                items={items}
+                items={filteredItems}
                 onAddUrl={() => !isFetchingVideos && setShowAddUrlModal(true)}
                 onResumeSelected={() => handleStartSelectedDownloads()}
                 onPauseSelected={handlePauseSelected}
@@ -720,6 +798,7 @@ export function YoutubeDownloader() {
                         allSelected={allSelected}
                         isIndeterminate={isIndeterminate}
                         toggleSelectAll={toggleSelectAll}
+                        onToggleItemSelect={handleToggleItemSelect}
                         onAddUrl={() =>
                             !isFetchingVideos && setShowAddUrlModal(true)
                         }
@@ -731,7 +810,7 @@ export function YoutubeDownloader() {
                     />
 
                     <DownloaderFooter
-                        items={items}
+                        items={filteredItems}
                         activeFilter={activeFilter}
                         setActiveFilter={setActiveFilter}
                     />
