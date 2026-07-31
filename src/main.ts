@@ -5,10 +5,6 @@ import { fileURLToPath } from 'node:url'
 
 import { toFriendlyError } from './lib/network-error'
 import {
-    initSessionLogger,
-    shutdownLogger,
-} from './lib/services/logger/service'
-import {
     chooseDirectory,
     chooseSavePath,
     closeAllWriteStreams,
@@ -20,6 +16,10 @@ import {
     saveTextFile,
     writeStreamChunk,
 } from './lib/services/files/service'
+import {
+    initSessionLogger,
+    shutdownLogger,
+} from './lib/services/logger/service'
 import {
     checkForUpdate,
     cleanupStaleInstallers,
@@ -142,9 +142,7 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 app.on('ready', async () => {
     // Initialize session logger
-    const logger = initSessionLogger(
-        path.join(app.getPath('userData'), 'logs'),
-    )
+    const logger = initSessionLogger(path.join(app.getPath('userData'), 'logs'))
     logger.startSession('FuseGrab Application', {
         platform: process.platform,
         arch: process.arch,
@@ -167,8 +165,10 @@ app.on('ready', async () => {
 
 // A cancelled or crashed export can leave a file handle open; make sure they're
 // all closed (and their partial files removed) before the process goes away.
+// shutdownLogger() is deliberately synchronous: Electron does not await
+// before-quit listeners, so an async close/copy can be cut off by process exit.
 app.on('before-quit', () => {
-    closeAllWriteStreams()
+    void closeAllWriteStreams()
     shutdownLogger()
 })
 
