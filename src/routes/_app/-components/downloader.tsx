@@ -38,7 +38,8 @@ export function YoutubeDownloader() {
             try {
                 const parsed: DownloadItem[] = JSON.parse(saved)
                 return parsed.map((item) => {
-                    const isSingleUrl = item.isSingleUrl ?? (item.type === 'video')
+                    const isSingleUrl =
+                        item.isSingleUrl ?? item.type === 'video'
                     if (
                         item.status === 'Downloading' ||
                         item.status === 'Queued' ||
@@ -79,6 +80,10 @@ export function YoutubeDownloader() {
     })
 
     const isDownloadingRef = useRef(false)
+    // Each backend download is assigned a run id. Cancelling a download invalidates
+    // its run immediately, so its eventual close/error events cannot affect a newer
+    // download that was started by Resume.
+    const activeRunIdRef = useRef(0)
 
     const handleDefaultQualityChange = (quality: string) => {
         setDefaultQuality(quality)
@@ -137,6 +142,11 @@ export function YoutubeDownloader() {
         activeItemUrlRef.current = activeItemUrl
     }, [activeItemUrl])
 
+    const normalizeProgressPercent = (percent: unknown) => {
+        if (typeof percent !== 'number' || !Number.isFinite(percent)) return 0
+        return Math.max(0, Math.min(100, percent))
+    }
+
     // Mount-only: recover orphan statuses from crash/shutdown
     useEffect(() => {
         window.api.youtube.getDownloadState().then((ds) => {
@@ -193,8 +203,7 @@ export function YoutubeDownloader() {
                             ? item.url === activeItemUrlRef.current
                             : item.status === 'Downloading'
                     ) {
-                        const newPercent = Math.max(
-                            item.percent || 0,
+                        const newPercent = normalizeProgressPercent(
                             data.percent,
                         )
                         return {
@@ -202,7 +211,11 @@ export function YoutubeDownloader() {
                             status: 'Downloading',
                             percent: newPercent,
                             statusStage:
-                                newPercent >= 99 ? 'Finalizing...' : undefined,
+                                newPercent >= 99
+                                    ? 'Finalizing...'
+                                    : newPercent > 0
+                                      ? undefined
+                                      : 'Preparing...',
                         }
                     }
                     return item
@@ -235,7 +248,7 @@ export function YoutubeDownloader() {
                                 data.status === 'downloading'
                                     ? 'Downloading'
                                     : item.status,
-                            percent: data.percent,
+                            percent: normalizeProgressPercent(data.percent),
                             statusStage: data.videoTitle
                                 ? `Downloading: ${data.videoTitle}`
                                 : undefined,
@@ -391,32 +404,44 @@ export function YoutubeDownloader() {
         }
     }, [])
 
+    const pauseRequestedRef = useRef<Set<string>>(new Set())
+
+    const toDownloadingItem = (item: DownloadItem): DownloadItem => ({
+        ...item,
+        status: 'Downloading',
+        percent: 0,
+        statusStage: 'Preparing...',
+    })
+
+    const invalidateActiveDownload = () => {
+        activeRunIdRef.current += 1
+        isDownloadingRef.current = false
+        setIsDownloading(false)
+        setActiveItemUrl(null)
+    }
+
+    const startDownloadRun = (item: DownloadItem) => {
+        const runId = activeRunIdRef.current + 1
+        activeRunIdRef.current = runId
+        isDownloadingRef.current = true
+        setIsDownloading(true)
+        setActiveItemUrl(item.url)
+        setItems((prev) =>
+            prev.map((i) => (i.id === item.id ? toDownloadingItem(i) : i)),
+        )
+        processDownloadItem(item, runId)
+    }
+
     useEffect(() => {
         if (isDownloadingRef.current) return
 
-        const queuedItem = items.find((i) => i.status === 'Queued')
-        if (queuedItem) {
-            isDownloadingRef.current = true
-            setIsDownloading(true)
-            setActiveItemUrl(queuedItem.url)
+        const queuedItem = items.find(
+            (i) =>
+                i.status === 'Queued' && !pauseRequestedRef.current.has(i.id),
+        )
+        if (!queuedItem) return
 
-            setItems((prev) =>
-                prev.map((i) =>
-                    i.id === queuedItem.id
-                        ? {
-                              ...i,
-                              status: 'Downloading',
-                              percent: i.percent || 0,
-                              statusStage:
-                                  i.percent && i.percent > 0
-                                      ? undefined
-                                      : 'Preparing...',
-                          }
-                        : i,
-                ),
-            )
-            processDownloadItem(queuedItem)
-        }
+        startDownloadRun(queuedItem)
     }, [items, isDownloading])
 
     const handleStartSelectedDownloads = (targetItemId?: string) => {
@@ -431,27 +456,16 @@ export function YoutubeDownloader() {
         const firstItem = eligible[0]
         const canStartImmediately = !isDownloadingRef.current
 
-        if (canStartImmediately) {
-            isDownloadingRef.current = true
-            setIsDownloading(true)
-            setActiveItemUrl(firstItem.url)
-        }
-
         const targetIds = new Set(eligible.map((e) => e.id))
+        for (const id of targetIds) {
+            pauseRequestedRef.current.delete(id)
+        }
 
         setItems((prev) =>
             prev.map((i) => {
                 if (targetIds.has(i.id)) {
                     if (canStartImmediately && i.id === firstItem.id) {
-                        return {
-                            ...i,
-                            status: 'Downloading',
-                            percent: i.percent || 0,
-                            statusStage:
-                                i.percent && i.percent > 0
-                                    ? undefined
-                                    : 'Preparing...',
-                        }
+                        return toDownloadingItem(i)
                     }
                     if (i.status !== 'Complete') {
                         return {
@@ -466,13 +480,11 @@ export function YoutubeDownloader() {
         )
 
         if (canStartImmediately) {
-            processDownloadItem(firstItem)
+            startDownloadRun(firstItem)
         }
     }
 
-    const cancelledRef = useRef(false)
-
-    const processDownloadItem = async (item: DownloadItem) => {
+    const processDownloadItem = async (item: DownloadItem, runId: number) => {
         let targetDir = downloadDirRef.current
         if (!targetDir) {
             targetDir = await window.files.getDefaultDownloadDir()
@@ -480,27 +492,14 @@ export function YoutubeDownloader() {
             setDownloadDir(targetDir)
         }
 
-        cancelledRef.current = false
-
         try {
+            if (activeRunIdRef.current !== runId) return
             isDownloadingRef.current = true
             setIsDownloading(true)
             setActiveItemUrl(item.url)
 
             setItems((prev) =>
-                prev.map((i) =>
-                    i.id === item.id
-                        ? {
-                              ...i,
-                              status: 'Downloading',
-                              percent: i.percent || 0,
-                              statusStage:
-                                  i.percent && i.percent > 0
-                                      ? undefined
-                                      : 'Preparing...',
-                          }
-                        : i,
-                ),
+                prev.map((i) => (i.id === item.id ? toDownloadingItem(i) : i)),
             )
 
             if (item.type === 'video') {
@@ -536,47 +535,64 @@ export function YoutubeDownloader() {
                     rootDownloadDir: targetDir,
                 })
 
-                setItems((prev) =>
-                    prev.map((i) =>
-                        i.id === item.id
-                            ? {
-                                  ...i,
-                                  status: 'Complete',
-                                  percent: 100,
-                                  statusStage: undefined,
-                                  savePath,
-                              }
-                            : i,
-                    ),
-                )
+                if (activeRunIdRef.current === runId) {
+                    setItems((prev) =>
+                        prev.map((i) =>
+                            i.id === item.id
+                                ? {
+                                      ...i,
+                                      status: 'Complete',
+                                      percent: 100,
+                                      statusStage: undefined,
+                                      savePath,
+                                  }
+                                : i,
+                        ),
+                    )
+                }
             } else if (item.type === 'channel') {
                 const sanitized = sanitizeFilename(item.name)
                 const saveDir = `${targetDir.replace(/\/$/, '')}/${sanitized}`
 
+                const isAudio = item.quality?.toLowerCase().includes('audio')
+                const isBest =
+                    !item.quality ||
+                    item.quality === 'Best Quality' ||
+                    item.quality === 'Best'
+                const heightVal = isAudio
+                    ? undefined
+                    : isBest
+                      ? undefined
+                      : parseInt(item.quality || '', 10) || undefined
+
                 await window.api.youtube.downloadChannel({
                     channelUrl: item.url,
                     saveDir,
+                    qualityHeight: heightVal,
+                    isAudioOnly: isAudio,
                     rootDownloadDir: targetDir,
                 })
 
-                setItems((prev) =>
-                    prev.map((i) =>
-                        i.id === item.id
-                            ? {
-                                  ...i,
-                                  status: 'Complete',
-                                  percent: 100,
-                                  statusStage: undefined,
-                                  savePath: saveDir,
-                              }
-                            : i,
-                    ),
-                )
+                if (activeRunIdRef.current === runId) {
+                    setItems((prev) =>
+                        prev.map((i) =>
+                            i.id === item.id
+                                ? {
+                                      ...i,
+                                      status: 'Complete',
+                                      percent: 100,
+                                      statusStage: undefined,
+                                      savePath: saveDir,
+                                  }
+                                : i,
+                        ),
+                    )
+                }
             }
         } catch (err: any) {
-            // If user explicitly cancelled (pause/stop/delete), don't overwrite
-            // the status that the handler already set
-            if (!cancelledRef.current) {
+            // A cancellation invalidates the run before the process exits. Ignore
+            // stale process errors so they cannot overwrite a resumed item.
+            if (activeRunIdRef.current === runId) {
                 const rawMsg = String(err?.message || '')
                 const cleanMsg = rawMsg
                     .replace(/^Error invoking remote method '[^']*':\s*/, '')
@@ -595,10 +611,11 @@ export function YoutubeDownloader() {
                 )
             }
         } finally {
-            isDownloadingRef.current = false
-            setIsDownloading(false)
-            setActiveItemUrl(null)
-            cancelledRef.current = false
+            if (activeRunIdRef.current === runId) {
+                isDownloadingRef.current = false
+                setIsDownloading(false)
+                setActiveItemUrl(null)
+            }
         }
     }
 
@@ -618,28 +635,57 @@ export function YoutubeDownloader() {
     }
 
     const handlePauseSelected = () => {
-        cancelledRef.current = true
-        pauseSelectedItems(filteredItems, setItems)
-    }
-
-    const handleStopItem = (id: string) => {
-        cancelledRef.current = true
-        stopItemById(id, items, setItems)
-    }
-
-    const handleDeleteItem = (id: string) => {
-        cancelledRef.current = true
-        cleanupDeletedIds([id])
-        deleteItemById(id, items, setItems)
-    }
-
-    const handleDeleteSelected = () => {
-        cancelledRef.current = true
         const selectedInView = filteredItems.filter((i) => i.selected)
         const targetIds =
             selectedInView.length > 0
                 ? selectedInView.map((i) => i.id)
                 : filteredItems.map((i) => i.id)
+        for (const id of targetIds) {
+            pauseRequestedRef.current.add(id)
+        }
+        if (
+            filteredItems.some(
+                (i) => targetIds.includes(i.id) && i.status === 'Downloading',
+            )
+        ) {
+            invalidateActiveDownload()
+        }
+        pauseSelectedItems(filteredItems, setItems)
+    }
+
+    const handleStopItem = (id: string) => {
+        if (items.find((item) => item.id === id)?.status === 'Downloading') {
+            invalidateActiveDownload()
+        }
+        pauseRequestedRef.current.add(id)
+        stopItemById(id, items, setItems)
+    }
+
+    const handleDeleteItem = (id: string) => {
+        if (items.find((item) => item.id === id)?.status === 'Downloading') {
+            invalidateActiveDownload()
+        }
+        pauseRequestedRef.current.add(id)
+        cleanupDeletedIds([id])
+        deleteItemById(id, items, setItems)
+    }
+
+    const handleDeleteSelected = () => {
+        const selectedInView = filteredItems.filter((i) => i.selected)
+        const targetIds =
+            selectedInView.length > 0
+                ? selectedInView.map((i) => i.id)
+                : filteredItems.map((i) => i.id)
+        for (const id of targetIds) {
+            pauseRequestedRef.current.add(id)
+        }
+        if (
+            filteredItems.some(
+                (i) => targetIds.includes(i.id) && i.status === 'Downloading',
+            )
+        ) {
+            invalidateActiveDownload()
+        }
         cleanupDeletedIds(targetIds)
         deleteSelectedItems(filteredItems, setItems)
     }

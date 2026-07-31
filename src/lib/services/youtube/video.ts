@@ -14,7 +14,8 @@ import path from 'node:path'
 
 import { DownloadLogger } from '../logger/service'
 
-import { ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
+import { ensureFfmpegBinary, ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
+import { buildVideoFormatSelector } from './format'
 
 export async function getYoutubeVideoInfo(
     url: string,
@@ -152,14 +153,13 @@ export async function downloadYoutubeVideo(
         '--newline',
         '--merge-output-format',
         'mp4',
-        '--postprocessor-args',
-        'ffmpeg:-c copy',
         '--no-mtime',
     ]
 
-    if (ffmpegPath && existsSync(ffmpegPath)) {
-        args.push('--ffmpeg-location', ffmpegPath)
-        logger.info(`ffmpeg binary located at: ${ffmpegPath}`)
+    const resolvedFfmpegPath = await ensureFfmpegBinary(ffmpegPath, logger)
+    if (resolvedFfmpegPath) {
+        args.push('--ffmpeg-location', resolvedFfmpegPath)
+        logger.info(`ffmpeg binary located at: ${resolvedFfmpegPath}`)
     } else {
         logger.warn('ffmpeg binary not found at default location.')
     }
@@ -176,15 +176,9 @@ export async function downloadYoutubeVideo(
                 ? qualityItag
                 : null)
         if (targetHeight) {
-            args.push(
-                '-f',
-                `bestvideo[height<=${targetHeight}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${targetHeight}]+bestaudio/best`,
-            )
+            args.push('-f', buildVideoFormatSelector(targetHeight))
         } else {
-            args.push(
-                '-f',
-                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-            )
+            args.push('-f', buildVideoFormatSelector())
         }
     }
 
@@ -202,7 +196,7 @@ export async function downloadYoutubeVideo(
         channelProgress: null,
     })
 
-    const proc = spawn(ytDlpPath, args)
+    const proc = spawn(ytDlpPath, args, { detached: true })
     onProcessStart(proc)
     logger.info(`yt-dlp child process spawned with PID ${proc.pid}`)
 
@@ -231,22 +225,23 @@ export async function downloadYoutubeVideo(
         return Math.max(maxEmittedPercent, Math.min(95, mapped))
     }
 
-function parsePercentFromLine(line: string): number | null {
-    const ytDlpMatch = line.match(/\[download\]\s+([\d.]+)%/)
-    if (ytDlpMatch) {
-        const val = parseFloat(ytDlpMatch[1])
-        return isNaN(val) ? null : val
-    }
+    function parsePercentFromLine(line: string): number | null {
+        const ytDlpMatch = line.match(/\[download\]\s+([\d.]+)%/)
+        if (ytDlpMatch) {
+            const val = parseFloat(ytDlpMatch[1])
+            return isNaN(val) ? null : val
+        }
 
-    const aria2Match =
-        line.match(/\[#\w+.*?\(([\d.]+)%\)/) || line.match(/\[#\w+.*?\s+([\d.]+)%/)
-    if (aria2Match) {
-        const val = parseFloat(aria2Match[1])
-        return isNaN(val) ? null : val
-    }
+        const aria2Match =
+            line.match(/\[#\w+.*?\(([\d.]+)%\)/) ||
+            line.match(/\[#\w+.*?\s+([\d.]+)%/)
+        if (aria2Match) {
+            const val = parseFloat(aria2Match[1])
+            return isNaN(val) ? null : val
+        }
 
-    return null
-}
+        return null
+    }
 
     return new Promise((resolve, reject) => {
         proc.stdout.on('data', (data: Buffer) => {

@@ -8,12 +8,6 @@ export async function pauseSelectedItems(
     const targetItems = hasSelection ? items.filter((i) => i.selected) : items
     const hasDownloading = targetItems.some((i) => i.status === 'Downloading')
 
-    if (hasDownloading) {
-        try {
-            await window.api.youtube.cancelDownload()
-        } catch {}
-    }
-
     const targetIds = new Set(targetItems.map((i) => i.id))
 
     setItems((prev) =>
@@ -27,6 +21,12 @@ export async function pauseSelectedItems(
             return i
         }),
     )
+
+    if (hasDownloading) {
+        try {
+            await window.api.youtube.cancelDownload()
+        } catch {}
+    }
 }
 
 export async function stopItemById(
@@ -52,8 +52,7 @@ export async function stopItemById(
             i.id === id
                 ? {
                       ...i,
-                      status: 'Stopped',
-                      percent: 0,
+                      status: 'Paused',
                       statusStage: undefined,
                   }
                 : i,

@@ -14,8 +14,9 @@ import path from 'node:path'
 
 import { DownloadLogger } from '../logger/service'
 
-import { ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
+import { ensureFfmpegBinary, ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
 import { scrapeChannelWithBrowser } from './channel-scraper'
+import { buildVideoFormatSelector } from './format'
 
 export async function getYoutubeUrlType(
     url: string,
@@ -231,7 +232,8 @@ export async function downloadYoutubeChannel(
     startPower: () => void,
     stopPower: () => void,
 ): Promise<void> {
-    const { channelUrl, saveDir, qualityHeight, isAudioOnly, rootDownloadDir } = options
+    const { channelUrl, saveDir, qualityHeight, isAudioOnly, rootDownloadDir } =
+        options
     const logDir = rootDownloadDir || path.dirname(saveDir)
     const logger = new DownloadLogger(logDir)
 
@@ -265,8 +267,6 @@ export async function downloadYoutubeChannel(
         '--newline',
         '--merge-output-format',
         'mp4',
-        '--postprocessor-args',
-        'ffmpeg:-c copy',
         '--no-mtime',
         '--sleep-requests',
         '1',
@@ -276,9 +276,10 @@ export async function downloadYoutubeChannel(
         '5',
     ]
 
-    if (ffmpegPath && existsSync(ffmpegPath)) {
-        args.push('--ffmpeg-location', ffmpegPath)
-        logger.info(`ffmpeg binary located at: ${ffmpegPath}`)
+    const resolvedFfmpegPath = await ensureFfmpegBinary(ffmpegPath, logger)
+    if (resolvedFfmpegPath) {
+        args.push('--ffmpeg-location', resolvedFfmpegPath)
+        logger.info(`ffmpeg binary located at: ${resolvedFfmpegPath}`)
     } else {
         logger.warn('ffmpeg binary not found at default location.')
     }
@@ -286,15 +287,9 @@ export async function downloadYoutubeChannel(
     if (isAudioOnly) {
         args.push('-f', 'bestaudio', '-x', '--audio-format', 'mp3')
     } else if (qualityHeight) {
-        args.push(
-            '-f',
-            `bestvideo[height<=${qualityHeight}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${qualityHeight}]+bestaudio/best`,
-        )
+        args.push('-f', buildVideoFormatSelector(qualityHeight))
     } else {
-        args.push(
-            '-f',
-            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-        )
+        args.push('-f', buildVideoFormatSelector())
     }
 
     const outputTemplate = path.join(saveDir, '%(title)s [%(id)s].%(ext)s')
@@ -319,7 +314,7 @@ export async function downloadYoutubeChannel(
         },
     })
 
-    const proc = spawn(ytDlpPath, args)
+    const proc = spawn(ytDlpPath, args, { detached: true })
     onProcessStart(proc)
     logger.info(`yt-dlp child process spawned with PID ${proc.pid}`)
 
@@ -355,7 +350,8 @@ export async function downloadYoutubeChannel(
 
                 const ytDlpPercent = line.match(/\[download\]\s+([\d.]+)%/)
                 const aria2Percent =
-                    line.match(/\[#\w+.*?\(([\d.]+)%\)/) || line.match(/\[#\w+.*?\s+([\d.]+)%/)
+                    line.match(/\[#\w+.*?\(([\d.]+)%\)/) ||
+                    line.match(/\[#\w+.*?\s+([\d.]+)%/)
                 const percentMatch = ytDlpPercent || aria2Percent
 
                 if (percentMatch) {
@@ -370,10 +366,7 @@ export async function downloadYoutubeChannel(
                         }
                         updateState({ channelProgress: cp })
                         if (win && !win.isDestroyed()) {
-                            win.webContents.send(
-                                'youtube:channel-progress',
-                                cp,
-                            )
+                            win.webContents.send('youtube:channel-progress', cp)
                         }
                     }
                 }

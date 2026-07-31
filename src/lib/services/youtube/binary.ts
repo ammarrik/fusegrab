@@ -13,8 +13,10 @@ import {
 } from 'node:fs'
 import { chmod, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
+import { gunzipSync } from 'node:zlib'
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
+const FFMPEG_STATIC_RELEASE = 'b6.1.1'
 
 function getBinaryName(): string {
     if (process.platform === 'win32') return 'yt-dlp.exe'
@@ -129,6 +131,146 @@ export async function ensureYtDlpBinary(
     return binPath
 }
 
+function getFfmpegBinaryName(): string {
+    if (process.platform === 'win32') return 'ffmpeg.exe'
+    return 'ffmpeg'
+}
+
+function getFfmpegDownloadUrl(): string | null {
+    const supportedPlatforms = new Set(['darwin', 'linux', 'win32'])
+    const supportedArchs = new Set(['x64', 'ia32', 'arm64', 'arm'])
+
+    if (!supportedPlatforms.has(process.platform)) return null
+    if (!supportedArchs.has(process.arch)) return null
+
+    return `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_RELEASE}/ffmpeg-${process.platform}-${process.arch}.gz`
+}
+
+function getRealAsarPath(candidate: string): string {
+    return candidate.replace(
+        `${path.sep}app.asar${path.sep}`,
+        `${path.sep}app.asar.unpacked${path.sep}`,
+    )
+}
+
+function hasUsableBinary(
+    candidate: string | null | undefined,
+): candidate is string {
+    if (!candidate) return false
+    try {
+        return existsSync(candidate) && statSync(candidate).size > 1000
+    } catch {
+        return false
+    }
+}
+
+function uniquePaths(paths: Array<string | null | undefined>): string[] {
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const candidate of paths) {
+        if (!candidate || seen.has(candidate)) continue
+        seen.add(candidate)
+        result.push(candidate)
+    }
+    return result
+}
+
+export async function ensureFfmpegBinary(
+    bundledPath?: string | null,
+    logger?: DownloadLogger,
+): Promise<string | null> {
+    const binDir = path.join(app.getPath('userData'), 'bin')
+    const binPath = path.join(binDir, getFfmpegBinaryName())
+    const resourcesPath = (
+        process as NodeJS.Process & { resourcesPath?: string }
+    ).resourcesPath
+    const resourcePath = resourcesPath
+        ? path.join(
+              resourcesPath,
+              'app.asar.unpacked',
+              'node_modules',
+              'ffmpeg-static',
+              getFfmpegBinaryName(),
+          )
+        : null
+
+    for (const candidate of uniquePaths([
+        process.env.FFMPEG_BIN,
+        bundledPath,
+        bundledPath ? getRealAsarPath(bundledPath) : null,
+        resourcePath,
+        binPath,
+    ])) {
+        if (hasUsableBinary(candidate)) {
+            if (process.platform !== 'win32') {
+                await chmod(candidate, 0o755).catch(() => undefined)
+            }
+            logger?.info(`Using ffmpeg binary at: ${candidate}`)
+            return candidate
+        }
+    }
+
+    try {
+        const checkCmd = process.platform === 'win32' ? 'where' : 'which'
+        const sysPath = await new Promise<string>((resolve, reject) => {
+            execFile(checkCmd, [getFfmpegBinaryName()], (err, stdout) => {
+                if (err || !stdout.trim()) return reject(err)
+                resolve(stdout.trim().split('\n')[0].trim())
+            })
+        })
+        if (hasUsableBinary(sysPath)) {
+            logger?.info(`Using system ffmpeg binary at: ${sysPath}`)
+            return sysPath
+        }
+    } catch {}
+
+    const downloadUrl = getFfmpegDownloadUrl()
+    if (!downloadUrl) {
+        logger?.warn(
+            'Automatic ffmpeg download is not supported on this platform.',
+        )
+        return null
+    }
+
+    try {
+        mkdirSync(binDir, { recursive: true })
+        logger?.info(`Downloading ffmpeg binary from ${downloadUrl}...`)
+
+        const res = await fetch(downloadUrl)
+        if (!res.ok || !res.body) {
+            logger?.warn(
+                `Failed to fetch ffmpeg binary: HTTP ${res.status} ${res.statusText}`,
+            )
+            return null
+        }
+
+        const compressed = Buffer.from(await res.arrayBuffer())
+        const decompressed = gunzipSync(compressed)
+        if (decompressed.length < 1000) {
+            logger?.warn(
+                'Downloaded ffmpeg binary is too small, likely corrupt.',
+            )
+            return null
+        }
+
+        const tmpPath = `${binPath}.tmp_${Date.now()}`
+        writeFileSync(tmpPath, decompressed)
+        if (process.platform !== 'win32') {
+            await chmod(tmpPath, 0o755)
+        }
+        await rename(tmpPath, binPath)
+        logger?.info(`ffmpeg binary successfully installed at ${binPath}`)
+        return binPath
+    } catch (err: any) {
+        logger?.warn(
+            `Failed to download/load ffmpeg binary: ${err?.message || String(err)}`,
+            err,
+        )
+    }
+
+    return hasUsableBinary(binPath) ? binPath : null
+}
+
 function getAria2BinaryName(): string {
     if (process.platform === 'win32') return 'aria2c.exe'
     return 'aria2c'
@@ -176,8 +318,7 @@ export async function ensureAria2Binary(
                 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
         } else if (process.platform === 'darwin') {
             const arch = process.arch === 'arm64' ? 'arm64' : 'x86_64'
-            downloadUrl =
-                `https://github.com/q741451/aria2c-macos-standalone-binary/releases/download/v1.0.0/aria2c-macos-${arch}.tar.gz`
+            downloadUrl = `https://github.com/q741451/aria2c-macos-standalone-binary/releases/download/v1.0.0/aria2c-macos-${arch}.tar.gz`
         } else {
             logger?.warn(
                 'Automatic aria2 download is not supported on this platform.',
@@ -294,8 +435,6 @@ export async function getAntiRateLimitArgs(
         'Referer:https://www.youtube.com/',
         '--add-header',
         'Origin:https://www.youtube.com/',
-        '--extractor-args',
-        'youtube:player_client=ios,web,mweb',
         '--throttled-rate',
         '100K',
         '--socket-timeout',
@@ -313,7 +452,7 @@ export async function getAntiRateLimitArgs(
         logger?.info(`Using aria2 accelerator binary at: ${aria2Path}`)
         args.push(
             '--external-downloader',
-            aria2Path,
+            `http,https:${aria2Path}`,
             '--external-downloader-args',
             'aria2c:-j 16 -x 16 -s 16 -k 1M --connect-timeout=5 --timeout=5 --max-tries=3 --summary-interval=1',
         )
@@ -321,8 +460,8 @@ export async function getAntiRateLimitArgs(
         logger?.info(
             'aria2 accelerator is unavailable. Using standard concurrent fragment downloader.',
         )
-        args.push('--concurrent-fragments', '5')
     }
+    args.push('--concurrent-fragments', '5')
 
     try {
         const { session } = await import('electron')

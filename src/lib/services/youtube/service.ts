@@ -71,12 +71,27 @@ function stopPowerBlocker() {
     }
 }
 
+import { execFile } from 'node:child_process'
+
 export function cancelYoutubeDownload() {
     stopPowerBlocker()
     if (activeChildProcess) {
-        try {
-            activeChildProcess.kill('SIGTERM')
-        } catch {}
+        const pid = activeChildProcess.pid
+        if (pid) {
+            if (process.platform === 'win32') {
+                try {
+                    execFile('taskkill', ['/F', '/T', '/PID', String(pid)])
+                } catch {}
+            } else {
+                try {
+                    process.kill(-pid, 'SIGKILL')
+                } catch {
+                    try {
+                        activeChildProcess.kill('SIGKILL')
+                    } catch {}
+                }
+            }
+        }
         activeChildProcess = null
     }
     activeDownloadState = {
