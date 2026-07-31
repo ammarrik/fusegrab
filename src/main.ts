@@ -181,11 +181,13 @@ app.on('before-quit', () => {
     shutdownLogger()
 })
 
-// Quit when all windows are closed, except on macOS.
+// Quit when all windows are closed — including on macOS. The usual mac
+// convention keeps the app alive in the dock after the last window closes, but
+// FuseGrab is a single-window utility with nothing useful to do windowless, so
+// the red traffic-light button should fully quit instead of requiring an extra
+// right-click → Quit on the dock icon.
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit()
-    }
+    app.quit()
 })
 
 app.on('activate', () => {
