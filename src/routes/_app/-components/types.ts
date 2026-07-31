@@ -3,6 +3,7 @@ export interface DownloadItem {
     name: string
     url: string
     type: 'video' | 'channel'
+    isSingleUrl?: boolean
     channelName?: string
     quality?: string
     size: string

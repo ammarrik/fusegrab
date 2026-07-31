@@ -1,3 +1,6 @@
+import { MakerDMG } from '@electron-forge/maker-dmg'
+import { MakerSquirrel } from '@electron-forge/maker-squirrel'
+import { MakerZIP } from '@electron-forge/maker-zip'
 import { VitePlugin } from '@electron-forge/plugin-vite'
 
 const config = {
@@ -25,23 +28,25 @@ const config = {
         // The rounded PNG is shipped so the runtime window/taskbar icon works
         // in packaged builds (see src/main.ts).
         extraResource: ['./assets/icon.rounded.png'],
-        // Keep node_modules in the package (the Vite plugin would otherwise
-        // strip everything outside /.vite). The main process loads a few CJS
-        // deps at runtime via createRequire (electron-squirrel-startup,
-        // ffmpeg-static, ffprobe-static, ws); they must exist in node_modules.
         ignore: (file: string) => {
             if (!file) return false
             if (file.startsWith('/.vite')) return false
             if (file === '/node_modules' || file.startsWith('/node_modules/'))
                 return false
             if (file === '/package.json') return false
-            return true
+            if (file === '/out' || file.startsWith('/out/')) return true
+            if (file === '/src' || file.startsWith('/src/')) return true
+            if (file === '/build' || file.startsWith('/build/')) return true
+            if (file === '/scripts' || file.startsWith('/scripts/')) return true
+            if (file === '/.git' || file.startsWith('/.git/')) return true
+            return false
         },
     },
     rebuildConfig: {},
     makers: [
         {
             name: '@electron-forge/maker-squirrel',
+            platforms: ['win32'],
             config: {
                 // Installer + Add/Remove Programs icon on Windows.
                 setupIcon: './assets/icon.ico',
@@ -49,7 +54,8 @@ const config = {
         },
         {
             name: '@electron-forge/maker-zip',
-            platforms: ['darwin'],
+            platforms: ['darwin', 'win32'],
+            config: {},
         },
         {
             // macOS drag-to-install disk image. Uses the same .icns as the app

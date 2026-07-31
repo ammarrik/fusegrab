@@ -38,6 +38,7 @@ export function YoutubeDownloader() {
             try {
                 const parsed: DownloadItem[] = JSON.parse(saved)
                 return parsed.map((item) => {
+                    const isSingleUrl = item.isSingleUrl ?? (item.type === 'video')
                     if (
                         item.status === 'Downloading' ||
                         item.status === 'Queued' ||
@@ -45,11 +46,12 @@ export function YoutubeDownloader() {
                     ) {
                         return {
                             ...item,
+                            isSingleUrl,
                             status: 'Ready' as const,
                             statusStage: undefined,
                         }
                     }
-                    return item
+                    return { ...item, isSingleUrl }
                 })
             } catch {}
         }
@@ -262,6 +264,7 @@ export function YoutubeDownloader() {
                     name: info.title,
                     url: cleanUrl,
                     type: 'video',
+                    isSingleUrl: true,
                     channelName: info.author,
                     quality: defaultQuality || 'Best',
                     size: 'Calculating...',
@@ -334,6 +337,7 @@ export function YoutubeDownloader() {
                         name: v.title,
                         url: v.url,
                         type: 'video',
+                        isSingleUrl: false,
                         channelName: v.author || batch.channelTitle,
                         quality: defaultQuality || 'Best',
                         size: 'Calculating...',
@@ -475,11 +479,17 @@ export function YoutubeDownloader() {
                 const sanitized = sanitizeFilename(item.name)
                 const isAudio = item.quality?.toLowerCase().includes('audio')
                 const ext = isAudio ? 'mp3' : 'mp4'
-                const channelSubfolder = sanitizeFilename(
-                    item.channelName || 'Uncategorized',
-                )
-                const channelDir = `${targetDir.replace(/\/$/, '')}/${channelSubfolder}`
-                const savePath = `${channelDir}/${sanitized}.${ext}`
+
+                let savePath: string
+                if (item.isSingleUrl) {
+                    savePath = `${targetDir.replace(/\/$/, '')}/${sanitized}.${ext}`
+                } else {
+                    const channelSubfolder = sanitizeFilename(
+                        item.channelName || 'Uncategorized',
+                    )
+                    const channelDir = `${targetDir.replace(/\/$/, '')}/${channelSubfolder}`
+                    savePath = `${channelDir}/${sanitized}.${ext}`
+                }
                 const isBest =
                     !item.quality ||
                     item.quality === 'Best Quality' ||
@@ -598,9 +608,15 @@ export function YoutubeDownloader() {
 
         if (!matchesSearch) return false
 
+        if (activeFilter === 'individual') {
+            return Boolean(item.isSingleUrl)
+        }
         if (activeFilter.startsWith('channel:')) {
             const targetChannel = activeFilter.replace('channel:', '')
-            return (item.channelName || 'Uncategorized') === targetChannel
+            return (
+                !item.isSingleUrl &&
+                (item.channelName || 'Uncategorized') === targetChannel
+            )
         }
         if (activeFilter === 'finished') return item.status === 'Complete'
         if (activeFilter === 'unfinished') return item.status !== 'Complete'

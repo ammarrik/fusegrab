@@ -1,6 +1,8 @@
 import type { DownloadItem } from './types'
 
-import { Folder } from '#/components/icons'
+import { useState } from 'react'
+
+import { Folder, FolderOpen, Video } from '#/components/icons'
 
 interface DownloaderSidebarProps {
     items: DownloadItem[]
@@ -13,10 +15,16 @@ export function DownloaderSidebar({
     activeFilter,
     setActiveFilter,
 }: DownloaderSidebarProps) {
+    const [isChannelsOpen, setIsChannelsOpen] = useState(true)
+
+    const individualCount = items.filter((i) => i.isSingleUrl).length
+
     const channelMap = new Map<string, number>()
     for (const item of items) {
-        const name = item.channelName || 'Uncategorized'
-        channelMap.set(name, (channelMap.get(name) || 0) + 1)
+        if (!item.isSingleUrl) {
+            const name = item.channelName || 'Uncategorized'
+            channelMap.set(name, (channelMap.get(name) || 0) + 1)
+        }
     }
     const channelList = Array.from(channelMap.entries()).map(
         ([name, count]) => ({
@@ -52,33 +60,83 @@ export function DownloaderSidebar({
                             </span>
                         </button>
 
-                        {channelList.map((ch) => {
-                            const filterKey = `channel:${ch.name}`
-                            const isActive = activeFilter === filterKey
-                            return (
-                                <button
-                                    key={ch.name}
-                                    type="button"
-                                    onClick={() => setActiveFilter(filterKey)}
-                                    className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
-                                        isActive
-                                            ? 'bg-accent text-foreground'
-                                            : 'text-foreground/80 hover:bg-muted hover:text-foreground'
-                                    }`}
-                                    title={ch.name}
-                                >
-                                    <div className="flex min-w-0 items-center gap-2.5">
-                                        <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                                        <span className="truncate">
-                                            {ch.name}
-                                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setActiveFilter('individual')}
+                            className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
+                                activeFilter === 'individual'
+                                    ? 'bg-accent text-foreground'
+                                    : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+                            }`}
+                        >
+                            <div className="flex min-w-0 items-center gap-2.5">
+                                <Video className="text-primary h-4 w-4 shrink-0" />
+                                <span className="truncate">
+                                    Individual Videos
+                                </span>
+                            </div>
+                            <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                                {individualCount}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsChannelsOpen((prev) => !prev)}
+                            className="text-foreground/80 hover:bg-muted hover:text-foreground flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer"
+                        >
+                            <div className="flex min-w-0 items-center gap-2.5">
+                                {isChannelsOpen ? (
+                                    <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
+                                ) : (
+                                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                                )}
+                                <span className="truncate">
+                                    Channels & Playlists
+                                </span>
+                            </div>
+                            <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                                {channelList.length}
+                            </span>
+                        </button>
+
+                        {isChannelsOpen && (
+                            <div className="flex flex-col gap-1">
+                                {channelList.length === 0 ? (
+                                    <div className="text-muted-foreground/60 pl-9 pr-2.5 py-1.5 text-[11px] italic">
+                                        No channels or playlists
                                     </div>
-                                    <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
-                                        {ch.count}
-                                    </span>
-                                </button>
-                            )
-                        })}
+                                ) : (
+                                    channelList.map((ch) => {
+                                        const filterKey = `channel:${ch.name}`
+                                        const isActive =
+                                            activeFilter === filterKey
+                                        return (
+                                            <button
+                                                key={ch.name}
+                                                type="button"
+                                                onClick={() =>
+                                                    setActiveFilter(filterKey)
+                                                }
+                                                className={`flex w-full items-center justify-between rounded-lg pl-9 pr-2.5 py-2 text-xs font-medium transition-colors ${
+                                                    isActive
+                                                        ? 'bg-accent text-foreground'
+                                                        : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+                                                }`}
+                                                title={ch.name}
+                                            >
+                                                <span className="truncate">
+                                                    {ch.name}
+                                                </span>
+                                                <span className="bg-muted text-muted-foreground ml-1.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                                                    {ch.count}
+                                                </span>
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

@@ -66,7 +66,7 @@ export function AddUrlModal({
                     </DialogHeader>
 
                     <DialogDescription>
-                        Enter a YouTube video link or channel URL to download.
+                        Enter a YouTube video, playlist, or channel URL to download.
                     </DialogDescription>
 
                     <DialogBody>
