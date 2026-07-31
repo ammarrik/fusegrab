@@ -14,7 +14,12 @@ import path from 'node:path'
 
 import { DownloadLogger } from '../logger/service'
 
-import { ensureFfmpegBinary, ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
+import {
+    ensureFfmpegBinary,
+    ensureYtDlpBinary,
+    getAntiRateLimitArgs,
+    getJsRuntimeArgs,
+} from './binary'
 import { scrapeChannelWithBrowser } from './channel-scraper'
 import { buildVideoFormatSelector } from './format'
 
@@ -49,19 +54,19 @@ export async function getYoutubeUrlType(
     const ytDlpPath = await ensureYtDlpBinary()
     try {
         const antiRateLimitArgs = await getAntiRateLimitArgs()
+        const jsRuntimeArgs = await getJsRuntimeArgs()
         const stdout = await new Promise<string>((resolve, reject) => {
             execFile(
                 ytDlpPath,
                 [
                     ...antiRateLimitArgs,
+                    ...jsRuntimeArgs,
                     '--dump-single-json',
                     '--flat-playlist',
                     '--playlist-start',
                     '1',
                     '--playlist-end',
                     '1',
-                    '--js-runtimes',
-                    'node',
                     cleanUrl,
                 ],
                 { maxBuffer: 50 * 1024 * 1024 },
@@ -145,19 +150,19 @@ async function getChannelPageViaYtDlp(
     const end = page * limit
 
     const antiRateLimitArgs = await getAntiRateLimitArgs()
+    const jsRuntimeArgs = await getJsRuntimeArgs()
     const stdout = await new Promise<string>((resolve, reject) => {
         execFile(
             ytDlpPath,
             [
                 ...antiRateLimitArgs,
+                ...jsRuntimeArgs,
                 '--dump-single-json',
                 '--flat-playlist',
                 '--playlist-start',
                 String(start),
                 '--playlist-end',
                 String(end),
-                '--js-runtimes',
-                'node',
                 url,
             ],
             { maxBuffer: 50 * 1024 * 1024 },
@@ -262,8 +267,7 @@ export async function downloadYoutubeChannel(
 
     const args: string[] = [
         ...antiRateLimitArgs,
-        '--js-runtimes',
-        'node',
+        ...(await getJsRuntimeArgs(logger)),
         '--newline',
         '--merge-output-format',
         'mp4',

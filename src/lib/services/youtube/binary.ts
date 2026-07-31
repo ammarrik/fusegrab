@@ -8,6 +8,7 @@ import {
     existsSync,
     mkdirSync,
     readdirSync,
+    readFileSync,
     statSync,
     writeFileSync,
 } from 'node:fs'
@@ -420,6 +421,137 @@ export async function ensureAria2Binary(
 const DEFAULT_USER_AGENT =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
+const NODE_FALLBACK_PATHS = [
+    '/opt/homebrew/bin/node',
+    '/usr/local/bin/node',
+    '/usr/bin/node',
+]
+
+let cachedJsRuntime: string | null | undefined
+
+/**
+ * yt-dlp needs a JavaScript runtime to solve YouTube's player challenges.
+ *
+ * Passing a bare `--js-runtimes node` is unreliable in a packaged app: an app
+ * launched from Finder/Dock inherits only a minimal PATH (/usr/bin:/bin:...),
+ * so a version-manager node (nvm, fnm, volta) is invisible. yt-dlp then warns
+ * "No supported JavaScript runtime could be found" and silently degrades to a
+ * limited player client with a narrower format set.
+ *
+ * Resolve an absolute path instead, and omit the flag entirely rather than
+ * pointing yt-dlp at a runtime that isn't there.
+ */
+async function resolveJsRuntime(
+    logger?: DownloadLogger,
+): Promise<string | null> {
+    if (cachedJsRuntime !== undefined) return cachedJsRuntime
+
+    const candidates: Array<string | null> = [process.env.NODE_BIN || null]
+
+    // A login shell sources the user's profile, exposing nvm/fnm/volta shims
+    // that the GUI process PATH does not have.
+    try {
+        const shell = process.env.SHELL || '/bin/zsh'
+        const fromShell = await new Promise<string>((resolve, reject) => {
+            execFile(shell, ['-lic', 'command -v node'], (err, stdout) => {
+                if (err || !stdout.trim()) return reject(err)
+                resolve(stdout.trim().split('\n').pop()!.trim())
+            })
+        })
+        candidates.push(fromShell)
+    } catch {}
+
+    candidates.push(...NODE_FALLBACK_PATHS)
+
+    for (const candidate of uniquePaths(candidates)) {
+        if (hasUsableBinary(candidate)) {
+            logger?.info(
+                `Using JS runtime for YouTube challenges: ${candidate}`,
+            )
+            cachedJsRuntime = candidate
+            return candidate
+        }
+    }
+
+    logger?.warn(
+        'No JavaScript runtime found. yt-dlp will fall back to a limited YouTube player client, which may offer fewer formats.',
+    )
+    cachedJsRuntime = null
+    return null
+}
+
+const COOKIE_FILE_HEADER = [
+    '# Netscape HTTP Cookie File',
+    '# http://curl.haxx.se/rfc/cookie_spec.html',
+    '# This is a generated file! Do not edit.',
+    '',
+]
+
+/** Netscape cookie identity is the (domain, path, name) triple, not name alone. */
+function cookieKey(domain: string, cookiePath: string, name: string): string {
+    return `${domain}\t${cookiePath}\t${name}`
+}
+
+/**
+ * yt-dlp writes back to the jar passed via `--cookies`, accumulating the
+ * visitor-identity cookies YouTube's anti-bot keys on (VISITOR_INFO1_LIVE,
+ * __Secure-ROLLOUT_TOKEN). Rebuilding the file from the Electron session alone
+ * discards them, so every download presents a brand-new anonymous visitor from
+ * the same IP -- the exact pattern that triggers "Sign in to confirm you're not
+ * a bot". Read the existing jar so those entries survive.
+ *
+ * Lines are kept verbatim to preserve yt-dlp's `#HttpOnly_` domain prefix.
+ */
+function readExistingCookieJar(filePath: string): Map<string, string> {
+    const existing = new Map<string, string>()
+    if (!existsSync(filePath)) return existing
+
+    const nowSeconds = Date.now() / 1000
+    let raw: string
+    try {
+        raw = readFileSync(filePath, 'utf-8')
+    } catch {
+        return existing
+    }
+
+    for (const line of raw.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        // `#HttpOnly_` is a real record; every other `#` line is a comment.
+        if (trimmed.startsWith('#') && !trimmed.startsWith('#HttpOnly_')) {
+            continue
+        }
+
+        const fields = trimmed.split('\t')
+        if (fields.length < 7) continue
+
+        const [domain, , cookiePath, , expiration, name] = fields
+        // Expiration 0 means a session cookie, which never goes stale on disk.
+        const expiresAt = Number(expiration)
+        if (
+            Number.isFinite(expiresAt) &&
+            expiresAt > 0 &&
+            expiresAt < nowSeconds
+        ) {
+            continue
+        }
+
+        existing.set(
+            cookieKey(domain.replace(/^#HttpOnly_/, ''), cookiePath, name),
+            trimmed,
+        )
+    }
+
+    return existing
+}
+
+export async function getJsRuntimeArgs(
+    logger?: DownloadLogger,
+): Promise<string[]> {
+    const runtime = await resolveJsRuntime(logger)
+    return runtime ? ['--js-runtimes', `node:${runtime}`] : []
+}
+
 export async function getAntiRateLimitArgs(
     win?: BrowserWindow | null,
     logger?: DownloadLogger,
@@ -435,8 +567,6 @@ export async function getAntiRateLimitArgs(
         'Referer:https://www.youtube.com/',
         '--add-header',
         'Origin:https://www.youtube.com/',
-        '--throttled-rate',
-        '100K',
         '--socket-timeout',
         '15',
         '--retries',
@@ -484,35 +614,35 @@ export async function getAntiRateLimitArgs(
             } catch {}
         }
 
-        if (allCookies.length > 0) {
-            const cookieFilePath = path.join(
-                app.getPath('userData'),
-                'yt_cookies.txt',
+        const cookieFilePath = path.join(
+            app.getPath('userData'),
+            'yt_cookies.txt',
+        )
+
+        // Merge: start with what yt-dlp has already accumulated
+        const mergedJar = readExistingCookieJar(cookieFilePath)
+        let overlayCount = 0
+
+        // Overlay fresh Electron cookies on top
+        for (const c of allCookies) {
+            const domain = c.domain.startsWith('.') ? c.domain : `.${c.domain}`
+            const cookiePath = c.path || '/'
+            const flag = 'TRUE'
+            const secure = c.secure ? 'TRUE' : 'FALSE'
+            const expiration = Math.floor(
+                c.expirationDate || Date.now() / 1000 + 86400 * 365,
             )
-            const cookieLines = [
-                '# Netscape HTTP Cookie File',
-                '# http://curl.haxx.se/rfc/cookie_spec.html',
-                '# This is a generated file! Do not edit.',
-                '',
-            ]
-            for (const c of allCookies) {
-                const domain = c.domain.startsWith('.')
-                    ? c.domain
-                    : `.${c.domain}`
-                const flag = 'TRUE'
-                const cookiePath = c.path || '/'
-                const secure = c.secure ? 'TRUE' : 'FALSE'
-                const expiration = Math.floor(
-                    c.expirationDate || Date.now() / 1000 + 86400 * 365,
-                )
-                cookieLines.push(
-                    `${domain}\t${flag}\t${cookiePath}\t${secure}\t${expiration}\t${c.name}\t${c.value}`,
-                )
-            }
+            const line = `${domain}\t${flag}\t${cookiePath}\t${secure}\t${expiration}\t${c.name}\t${c.value}`
+            mergedJar.set(cookieKey(domain, cookiePath, c.name), line)
+            overlayCount++
+        }
+
+        if (mergedJar.size > 0) {
+            const cookieLines = [...COOKIE_FILE_HEADER, ...mergedJar.values()]
             writeFileSync(cookieFilePath, cookieLines.join('\n'), 'utf-8')
             args.push('--cookies', cookieFilePath)
             logger?.info(
-                `Extracted ${allCookies.length} cookies to ${cookieFilePath}`,
+                `Merged ${mergedJar.size} cookies (${overlayCount} from Electron session, ${mergedJar.size - overlayCount} preserved from yt-dlp) into ${cookieFilePath}`,
             )
         }
     } catch (err: any) {

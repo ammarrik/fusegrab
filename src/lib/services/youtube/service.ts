@@ -9,6 +9,7 @@ import type { BrowserWindow } from 'electron'
 import type { ChildProcess } from 'node:child_process'
 
 import { powerSaveBlocker } from 'electron'
+import { execFile } from 'node:child_process'
 
 import {
     downloadYoutubeChannel as downloadChannelImpl,
@@ -70,8 +71,6 @@ function stopPowerBlocker() {
         powerBlockerId = null
     }
 }
-
-import { execFile } from 'node:child_process'
 
 export function cancelYoutubeDownload() {
     stopPowerBlocker()

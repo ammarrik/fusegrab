@@ -33,6 +33,44 @@ import {
 
 import { getStatusText } from './types'
 
+/**
+ * `Retry` is amber rather than red: the item is still going to be attempted, so
+ * flagging it as an outright failure would overstate what happened.
+ */
+function statusTextClass(status: DownloadItem['status']): string {
+    switch (status) {
+        case 'Complete':
+            return 'text-success'
+        case 'Error':
+        case 'Missing':
+        case 'Failed':
+            return 'text-danger font-semibold'
+        case 'Downloading':
+            return 'text-primary font-semibold'
+        case 'Ready':
+            return 'font-medium text-emerald-500'
+        case 'Retry':
+            return 'font-medium text-amber-500'
+        default:
+            return 'text-muted-foreground'
+    }
+}
+
+function progressBarClass(status: DownloadItem['status']): string {
+    switch (status) {
+        case 'Complete':
+            return 'bg-success'
+        case 'Error':
+        case 'Missing':
+        case 'Failed':
+            return 'bg-danger'
+        case 'Retry':
+            return 'bg-amber-500'
+        default:
+            return 'bg-primary'
+    }
+}
+
 interface DownloaderTableProps {
     filteredItems: DownloadItem[]
     setItems: React.Dispatch<React.SetStateAction<DownloadItem[]>>
@@ -296,23 +334,7 @@ export function DownloaderTable({
                                         <div className="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
                                             <div className="flex items-center justify-between text-[11px]">
                                                 <span
-                                                    className={`truncate font-medium ${
-                                                        item.status ===
-                                                        'Complete'
-                                                            ? 'text-success'
-                                                            : item.status ===
-                                                                    'Error' ||
-                                                                item.status ===
-                                                                    'Missing'
-                                                              ? 'text-danger font-semibold'
-                                                              : item.status ===
-                                                                  'Downloading'
-                                                                ? 'text-primary font-semibold'
-                                                                : item.status ===
-                                                                    'Ready'
-                                                                  ? 'font-medium text-emerald-500'
-                                                                  : 'text-muted-foreground'
-                                                    }`}
+                                                    className={`truncate font-medium ${statusTextClass(item.status)}`}
                                                 >
                                                     {getStatusText(item)}
                                                 </span>
@@ -322,17 +344,7 @@ export function DownloaderTable({
                                                 item.status !== 'Ready' && (
                                                     <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                                                         <div
-                                                            className={`h-full transition-all duration-300 ${
-                                                                item.status ===
-                                                                'Complete'
-                                                                    ? 'bg-success'
-                                                                    : item.status ===
-                                                                            'Error' ||
-                                                                        item.status ===
-                                                                            'Missing'
-                                                                      ? 'bg-danger'
-                                                                      : 'bg-primary'
-                                                            }`}
+                                                            className={`h-full transition-all duration-300 ${progressBarClass(item.status)}`}
                                                             style={{
                                                                 width: `${
                                                                     item.status ===
@@ -443,6 +455,16 @@ export function DownloaderTable({
                                                     >
                                                         <RefreshCw className="text-primary h-3.5 w-3.5" />
                                                         <span>Redownload</span>
+                                                    </MenuItem>
+                                                ) : item.status === 'Retry' ||
+                                                  item.status === 'Failed' ? (
+                                                    <MenuItem
+                                                        onClick={() =>
+                                                            onStartItem(item.id)
+                                                        }
+                                                    >
+                                                        <RefreshCw className="text-primary h-3.5 w-3.5" />
+                                                        <span>Retry Now</span>
                                                     </MenuItem>
                                                 ) : (
                                                     <MenuItem

@@ -18,6 +18,7 @@ import {
     stopItemById,
 } from './handlers'
 import { DownloadOptionsModal } from './options-dialog'
+import { applyDownloadFailure, selectNextDownload } from './retry'
 import { DownloaderSidebar } from './sidebar'
 import { DownloaderTable } from './table'
 import { DownloaderToolbar } from './toolbar'
@@ -40,9 +41,13 @@ export function YoutubeDownloader() {
                 return parsed.map((item) => {
                     const isSingleUrl =
                         item.isSingleUrl ?? item.type === 'video'
+                    // Nothing may auto-start on launch. A pending retry is parked
+                    // as Ready with a fresh budget so the sweep does not fire off
+                    // a download the moment the window opens.
                     if (
                         item.status === 'Downloading' ||
                         item.status === 'Queued' ||
+                        item.status === 'Retry' ||
                         item.statusStage === 'Preparing...'
                     ) {
                         return {
@@ -50,6 +55,7 @@ export function YoutubeDownloader() {
                             isSingleUrl,
                             status: 'Ready' as const,
                             statusStage: undefined,
+                            retryCount: undefined,
                         }
                     }
                     return { ...item, isSingleUrl }
@@ -435,13 +441,23 @@ export function YoutubeDownloader() {
     useEffect(() => {
         if (isDownloadingRef.current) return
 
-        const queuedItem = items.find(
-            (i) =>
-                i.status === 'Queued' && !pauseRequestedRef.current.has(i.id),
+        const next = selectNextDownload(items, (id) =>
+            pauseRequestedRef.current.has(id),
         )
-        if (!queuedItem) return
+        if (!next) return
 
-        startDownloadRun(queuedItem)
+        if (next.kind === 'queued') {
+            startDownloadRun(next.item)
+            return
+        }
+
+        const attempt = (next.item.retryCount || 0) + 1
+        setItems((prev) =>
+            prev.map((i) =>
+                i.id === next.item.id ? { ...i, retryCount: attempt } : i,
+            ),
+        )
+        startDownloadRun({ ...next.item, retryCount: attempt })
     }, [items, isDownloading])
 
     const handleStartSelectedDownloads = (targetItemId?: string) => {
@@ -464,14 +480,20 @@ export function YoutubeDownloader() {
         setItems((prev) =>
             prev.map((i) => {
                 if (targetIds.has(i.id)) {
+                    // An explicit Start is a fresh attempt: clear the retry budget
+                    // so a Failed item becomes eligible for the sweep again.
                     if (canStartImmediately && i.id === firstItem.id) {
-                        return toDownloadingItem(i)
+                        return {
+                            ...toDownloadingItem(i),
+                            retryCount: undefined,
+                        }
                     }
                     if (i.status !== 'Complete') {
                         return {
                             ...i,
                             status: 'Queued',
                             statusStage: undefined,
+                            retryCount: undefined,
                         }
                     }
                 }
@@ -480,7 +502,7 @@ export function YoutubeDownloader() {
         )
 
         if (canStartImmediately) {
-            startDownloadRun(firstItem)
+            startDownloadRun({ ...firstItem, retryCount: undefined })
         }
     }
 
@@ -544,6 +566,7 @@ export function YoutubeDownloader() {
                                       status: 'Complete',
                                       percent: 100,
                                       statusStage: undefined,
+                                      retryCount: undefined,
                                       savePath,
                                   }
                                 : i,
@@ -582,6 +605,7 @@ export function YoutubeDownloader() {
                                       status: 'Complete',
                                       percent: 100,
                                       statusStage: undefined,
+                                      retryCount: undefined,
                                       savePath: saveDir,
                                   }
                                 : i,
@@ -598,14 +622,13 @@ export function YoutubeDownloader() {
                     .replace(/^Error invoking remote method '[^']*':\s*/, '')
                     .trim()
 
+                // Defer failures to a retry sweep that runs once the queue drains.
+                // Transient causes (throttling, bot checks, CDN hiccups) often clear
+                // by then, and moving on keeps one bad URL from stalling the queue.
                 setItems((prev) =>
                     prev.map((i) =>
                         i.id === item.id
-                            ? {
-                                  ...i,
-                                  status: 'Error',
-                                  statusStage: cleanMsg || 'Download failed',
-                              }
+                            ? applyDownloadFailure(i, cleanMsg)
                             : i,
                     ),
                 )

@@ -14,7 +14,12 @@ import path from 'node:path'
 
 import { DownloadLogger } from '../logger/service'
 
-import { ensureFfmpegBinary, ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
+import {
+    ensureFfmpegBinary,
+    ensureYtDlpBinary,
+    getAntiRateLimitArgs,
+    getJsRuntimeArgs,
+} from './binary'
 import { buildVideoFormatSelector } from './format'
 
 export async function getYoutubeVideoInfo(
@@ -27,16 +32,16 @@ export async function getYoutubeVideoInfo(
 
     const ytDlpPath = await ensureYtDlpBinary()
     const antiRateLimitArgs = await getAntiRateLimitArgs()
+    const jsRuntimeArgs = await getJsRuntimeArgs()
 
     const stdout = await new Promise<string>((resolve, reject) => {
         execFile(
             ytDlpPath,
             [
                 ...antiRateLimitArgs,
+                ...jsRuntimeArgs,
                 '--no-playlist',
                 '--dump-single-json',
-                '--js-runtimes',
-                'node',
                 cleanUrl,
             ],
             { maxBuffer: 50 * 1024 * 1024 },
@@ -148,8 +153,7 @@ export async function downloadYoutubeVideo(
 
     const args: string[] = [
         ...antiRateLimitArgs,
-        '--js-runtimes',
-        'node',
+        ...(await getJsRuntimeArgs(logger)),
         '--newline',
         '--merge-output-format',
         'mp4',

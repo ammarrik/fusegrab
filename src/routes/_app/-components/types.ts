@@ -16,12 +16,15 @@ export interface DownloadItem {
         | 'Missing'
         | 'Stopped'
         | 'Ready'
+        | 'Retry'
+        | 'Failed'
     statusStage?: string
     percent: number
     timeLeft: string
     dateModified: string
     savePath?: string
     selected: boolean
+    retryCount?: number
 }
 
 export function sanitizeFilename(name: string): string {
@@ -35,6 +38,9 @@ export function formatDate(date: Date): string {
     return `${yyyy}/${mm}/${dd}`
 }
 
+/** A failed item gets this many additional attempts before it is marked Failed. */
+export const MAX_RETRY_ATTEMPTS = 3
+
 export function getStatusText(item: DownloadItem): string {
     if (item.status === 'Complete') return 'Complete'
     if (item.status === 'Queued') return 'Queued'
@@ -43,6 +49,19 @@ export function getStatusText(item: DownloadItem): string {
     if (item.status === 'Error') return item.statusStage || 'Error'
     if (item.status === 'Paused') return 'Paused'
     if (item.status === 'Stopped') return 'Stopped'
+
+    if (item.status === 'Retry') {
+        const attempt = item.retryCount || 0
+        return attempt > 0
+            ? `Retry at end (${attempt}/${MAX_RETRY_ATTEMPTS})`
+            : 'Retry at end'
+    }
+
+    if (item.status === 'Failed') {
+        return item.statusStage
+            ? `Failed: ${item.statusStage}`
+            : `Failed after ${MAX_RETRY_ATTEMPTS} retries`
+    }
 
     if (item.status === 'Downloading') {
         if (item.statusStage) return item.statusStage
