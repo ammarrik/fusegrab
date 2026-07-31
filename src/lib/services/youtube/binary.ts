@@ -1,3 +1,4 @@
+import type { DownloadLogger } from '../logger/service'
 import type { BrowserWindow } from 'electron'
 
 import { app } from 'electron'
@@ -26,7 +27,10 @@ function getDownloadUrl(): string {
     return `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${name}`
 }
 
-export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
+export async function ensureYtDlpBinary(
+    forceUpdate = false,
+    logger?: DownloadLogger,
+): Promise<string> {
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binName = getBinaryName()
     const binPath = path.join(binDir, binName)
@@ -39,18 +43,32 @@ export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
             const stat = statSync(binPath)
             // Treat empty or tiny files as corrupt
             if (stat.size < 1000) {
+                logger?.warn(
+                    `Existing yt-dlp binary at ${binPath} is corrupt or tiny (${stat.size} bytes). Redownloading...`,
+                )
                 needsDownload = true
             } else if (
                 now - stat.mtimeMs > TWENTY_FOUR_HOURS_MS ||
                 forceUpdate
             ) {
+                logger?.info(
+                    'yt-dlp binary is older than 24h or force update requested. Checking for update...',
+                )
                 needsDownload = true
             } else {
+                logger?.info(`Using existing yt-dlp binary at: ${binPath}`)
                 needsDownload = false
             }
-        } catch {
+        } catch (e: any) {
+            logger?.warn(
+                `Failed to stat yt-dlp binary at ${binPath}: ${e?.message}`,
+            )
             needsDownload = true
         }
+    } else {
+        logger?.info(
+            `yt-dlp binary not found at ${binPath}. Downloading latest release...`,
+        )
     }
 
     if (!needsDownload) {
@@ -61,13 +79,15 @@ export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
 
     try {
         const url = getDownloadUrl()
+        logger?.info(`Downloading yt-dlp binary from ${url}...`)
         const res = await fetch(url)
         if (res.ok && res.body) {
             const buffer = Buffer.from(await res.arrayBuffer())
             if (buffer.length < 1000) {
-                throw new Error(
-                    'Downloaded yt-dlp binary is too small, likely corrupt',
-                )
+                const errMsg =
+                    'Downloaded yt-dlp binary is too small, likely corrupt'
+                logger?.error(errMsg)
+                throw new Error(errMsg)
             }
 
             const tmpPath = `${binPath}.tmp_${now}`
@@ -88,16 +108,22 @@ export async function ensureYtDlpBinary(forceUpdate = false): Promise<string> {
             }
 
             await rename(tmpPath, binPath)
+            logger?.info(`yt-dlp binary updated successfully at ${binPath}`)
         } else {
-            throw new Error(`Failed to fetch yt-dlp: HTTP ${res.status}`)
+            const errMsg = `Failed to fetch yt-dlp binary: HTTP ${res.status} ${res.statusText}`
+            logger?.error(errMsg)
+            throw new Error(errMsg)
         }
-    } catch (err) {
+    } catch (err: any) {
         if (existsSync(binPath) && statSync(binPath).size > 1000) {
+            logger?.warn(
+                `Failed to download updated yt-dlp binary (${err?.message || String(err)}). Reusing existing binary at ${binPath}`,
+            )
             return binPath
         }
-        throw new Error(
-            `Failed to download yt-dlp binary: ${err instanceof Error ? err.message : String(err)}`,
-        )
+        const errMsg = `Failed to download yt-dlp binary: ${err instanceof Error ? err.message : String(err)}`
+        logger?.error(errMsg, err)
+        throw new Error(errMsg)
     }
 
     return binPath
@@ -108,7 +134,9 @@ function getAria2BinaryName(): string {
     return 'aria2c'
 }
 
-export async function ensureAria2Binary(): Promise<string | null> {
+export async function ensureAria2Binary(
+    logger?: DownloadLogger,
+): Promise<string | null> {
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binName = getAria2BinaryName()
     const binPath = path.join(binDir, binName)
@@ -116,7 +144,10 @@ export async function ensureAria2Binary(): Promise<string | null> {
     if (existsSync(binPath)) {
         try {
             const stat = statSync(binPath)
-            if (stat.size > 1000) return binPath
+            if (stat.size > 1000) {
+                logger?.info(`Found cached aria2c binary at: ${binPath}`)
+                return binPath
+            }
         } catch {}
     }
 
@@ -129,10 +160,14 @@ export async function ensureAria2Binary(): Promise<string | null> {
             })
         })
         if (sysPath && existsSync(sysPath)) {
+            logger?.info(`Found system aria2c binary at: ${sysPath}`)
             return sysPath
         }
     } catch {}
 
+    logger?.info(
+        'aria2c binary not found locally or in PATH. Attempting automatic download...',
+    )
     try {
         mkdirSync(binDir, { recursive: true })
         let downloadUrl = ''
@@ -143,11 +178,19 @@ export async function ensureAria2Binary(): Promise<string | null> {
             downloadUrl =
                 'https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-1.37.0-osx-darwin-64bit.tar.gz'
         } else {
+            logger?.warn(
+                'Automatic aria2 download is not supported on this platform.',
+            )
             return null
         }
 
+        logger?.info(`Downloading aria2 release archive from ${downloadUrl}...`)
         const res = await fetch(downloadUrl)
-        if (!res.ok || !res.body) return null
+        if (!res.ok || !res.body) {
+            const warnMsg = `Failed to fetch aria2 archive from ${downloadUrl}: HTTP ${res.status} ${res.statusText}`
+            logger?.warn(warnMsg)
+            return null
+        }
 
         const ext = process.platform === 'win32' ? 'zip' : 'tar.gz'
         const tmpArchive = path.join(binDir, `aria2_archive.${ext}`)
@@ -166,6 +209,9 @@ export async function ensureAria2Binary(): Promise<string | null> {
         })
 
         if (process.platform === 'win32') {
+            logger?.info(
+                'Extracting Windows aria2 zip archive via PowerShell...',
+            )
             await new Promise((resolve, reject) => {
                 execFile(
                     'powershell',
@@ -177,6 +223,7 @@ export async function ensureAria2Binary(): Promise<string | null> {
                 )
             })
         } else {
+            logger?.info('Extracting macOS aria2 tar archive...')
             await new Promise((resolve, reject) => {
                 execFile('tar', ['-xzf', tmpArchive, '-C', binDir], (err) =>
                     err ? reject(err) : resolve(true),
@@ -209,9 +256,21 @@ export async function ensureAria2Binary(): Promise<string | null> {
         await rm(tmpArchive, { force: true }).catch(() => undefined)
 
         if (existsSync(binPath)) {
+            logger?.info(
+                `aria2 binary successfully downloaded and installed at ${binPath}`,
+            )
             return binPath
+        } else {
+            logger?.warn(
+                'Extracted aria2 binary was not found at expected destination.',
+            )
         }
-    } catch {}
+    } catch (err: any) {
+        logger?.warn(
+            `Failed to download/load aria2 binary: ${err?.message || String(err)}. Falling back to standard downloader.`,
+            err,
+        )
+    }
 
     return null
 }
@@ -221,6 +280,7 @@ const DEFAULT_USER_AGENT =
 
 export async function getAntiRateLimitArgs(
     win?: BrowserWindow | null,
+    logger?: DownloadLogger,
 ): Promise<string[]> {
     const userAgent =
         (win && !win.isDestroyed() && win.webContents.getUserAgent()) ||
@@ -247,8 +307,9 @@ export async function getAntiRateLimitArgs(
         '3',
     ]
 
-    const aria2Path = await ensureAria2Binary()
+    const aria2Path = await ensureAria2Binary(logger)
     if (aria2Path) {
+        logger?.info(`Using aria2 accelerator binary at: ${aria2Path}`)
         args.push(
             '--external-downloader',
             aria2Path,
@@ -256,6 +317,9 @@ export async function getAntiRateLimitArgs(
             'aria2c:-j 16 -x 16 -s 16 -k 1M --connect-timeout=5 --timeout=5 --max-tries=3 --summary-interval=0',
         )
     } else {
+        logger?.info(
+            'aria2 accelerator is unavailable. Using standard concurrent fragment downloader.',
+        )
         args.push('--concurrent-fragments', '5')
     }
 
@@ -307,8 +371,13 @@ export async function getAntiRateLimitArgs(
             }
             writeFileSync(cookieFilePath, cookieLines.join('\n'), 'utf-8')
             args.push('--cookies', cookieFilePath)
+            logger?.info(
+                `Extracted ${allCookies.length} cookies to ${cookieFilePath}`,
+            )
         }
-    } catch {}
+    } catch (err: any) {
+        logger?.warn(`Failed to export browser cookies: ${err?.message}`)
+    }
 
     return args
 }

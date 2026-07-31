@@ -1,6 +1,3 @@
-import { MakerDMG } from '@electron-forge/maker-dmg'
-import { MakerSquirrel } from '@electron-forge/maker-squirrel'
-import { MakerZIP } from '@electron-forge/maker-zip'
 import { VitePlugin } from '@electron-forge/plugin-vite'
 
 const config = {

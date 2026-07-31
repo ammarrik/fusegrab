@@ -12,6 +12,8 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 
+import { DownloadLogger } from '../logger/service'
+
 import { ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
 import { scrapeChannelWithBrowser } from './channel-scraper'
 
@@ -229,14 +231,32 @@ export async function downloadYoutubeChannel(
     startPower: () => void,
     stopPower: () => void,
 ): Promise<void> {
-    const { channelUrl, saveDir, qualityHeight, isAudioOnly } = options
+    const { channelUrl, saveDir, qualityHeight, isAudioOnly, rootDownloadDir } = options
+    const logDir = rootDownloadDir || path.dirname(saveDir)
+    const logger = new DownloadLogger(logDir)
+
+    logger.startSession('Channel/Playlist Download', {
+        channelUrl,
+        saveDir,
+        qualityHeight,
+        isAudioOnly,
+    })
 
     const cleanUrl = channelUrl.trim()
     if (!existsSync(saveDir)) {
+        logger.info(`Creating target save directory: ${saveDir}`)
         mkdirSync(saveDir, { recursive: true })
     }
-    const ytDlpPath = await ensureYtDlpBinary()
-    const antiRateLimitArgs = await getAntiRateLimitArgs(win)
+
+    logger.info('Step 1/3: Resolving yt-dlp binary...')
+    const ytDlpPath = await ensureYtDlpBinary(false, logger)
+    logger.info(`yt-dlp binary located at: ${ytDlpPath}`)
+
+    logger.info('Step 2/3: Fetching anti-rate-limit parameters...')
+    const antiRateLimitArgs = await getAntiRateLimitArgs(win, logger)
+    logger.info(
+        `Anti-rate-limit arguments: ${JSON.stringify(antiRateLimitArgs)}`,
+    )
 
     const args: string[] = [
         ...antiRateLimitArgs,
@@ -258,6 +278,9 @@ export async function downloadYoutubeChannel(
 
     if (ffmpegPath && existsSync(ffmpegPath)) {
         args.push('--ffmpeg-location', ffmpegPath)
+        logger.info(`ffmpeg binary located at: ${ffmpegPath}`)
+    } else {
+        logger.warn('ffmpeg binary not found at default location.')
     }
 
     if (isAudioOnly) {
@@ -277,6 +300,11 @@ export async function downloadYoutubeChannel(
     const outputTemplate = path.join(saveDir, '%(title)s [%(id)s].%(ext)s')
     args.push('-o', outputTemplate, cleanUrl)
 
+    logger.info(
+        `Step 3/3: Spawning yt-dlp process with output template: ${outputTemplate}`,
+    )
+    logger.info(`Full yt-dlp arguments: ${args.join(' ')}`)
+
     startPower()
     updateState({
         isDownloading: true,
@@ -293,21 +321,28 @@ export async function downloadYoutubeChannel(
 
     const proc = spawn(ytDlpPath, args)
     onProcessStart(proc)
+    logger.info(`yt-dlp child process spawned with PID ${proc.pid}`)
 
     let currentItem = 0
     let totalItems = 0
     let videoTitle = ''
+    const stderrLines: string[] = []
 
     return new Promise((resolve, reject) => {
         proc.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n')
             for (const line of lines) {
+                logger.logStdoutLine(line)
+
                 const itemMatch = line.match(
                     /\[download\]\s+Downloading\s+(?:item|video)\s+(\d+)\s+of\s+(\d+)/i,
                 )
                 if (itemMatch) {
                     currentItem = parseInt(itemMatch[1], 10)
                     totalItems = parseInt(itemMatch[2], 10)
+                    logger.info(
+                        `Downloading item ${currentItem} of ${totalItems}`,
+                    )
                 }
 
                 const destMatch = line.match(
@@ -315,6 +350,7 @@ export async function downloadYoutubeChannel(
                 )
                 if (destMatch) {
                     videoTitle = path.basename(destMatch[1])
+                    logger.info(`Target destination: ${videoTitle}`)
                 }
 
                 if (line.includes('[download]')) {
@@ -342,18 +378,31 @@ export async function downloadYoutubeChannel(
             }
         })
 
-        proc.on('error', (err) => {
+        proc.stderr.on('data', (data: Buffer) => {
+            const str = data.toString()
+            logger.logStderrLine(str)
+            if (!str.includes('WARNING:')) {
+                stderrLines.push(str.trim())
+            }
+        })
+
+        proc.on('error', async (err) => {
             stopPower()
             onProcessEnd()
             updateState({ isDownloading: false })
+            logger.error('yt-dlp channel process encountered error', err)
+            await logger.endSession(false)
             reject(err)
         })
 
-        proc.on('close', (code) => {
+        proc.on('close', async (code) => {
             stopPower()
             onProcessEnd()
             updateState({ isDownloading: false })
+            logger.info(`yt-dlp process exited with code ${code}`)
             if (code === 0) {
+                logger.info('Channel download successfully completed.')
+                await logger.endSession(true)
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('youtube:channel-progress', {
                         currentItem: totalItems || currentItem,
@@ -365,7 +414,13 @@ export async function downloadYoutubeChannel(
                 }
                 resolve()
             } else {
-                reject(new Error(`Channel download exited with code ${code}`))
+                const errMsg =
+                    stderrLines.length > 0
+                        ? stderrLines.slice(-3).join(' ')
+                        : `Channel download exited with code ${code}`
+                logger.error(`Channel download failed: ${errMsg}`)
+                await logger.endSession(false)
+                reject(new Error(errMsg))
             }
         })
     })

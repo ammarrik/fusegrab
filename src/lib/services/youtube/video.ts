@@ -10,6 +10,9 @@ import ffmpegPath from 'ffmpeg-static'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
+import path from 'node:path'
+
+import { DownloadLogger } from '../logger/service'
 
 import { ensureYtDlpBinary, getAntiRateLimitArgs } from './binary'
 
@@ -116,11 +119,31 @@ export async function downloadYoutubeVideo(
     startPower: () => void,
     stopPower: () => void,
 ): Promise<{ filePath: string; size: number }> {
-    const { url, savePath, qualityItag, height } = options
+    const { url, savePath, qualityItag, height, rootDownloadDir } = options
+    const logDir =
+        rootDownloadDir ||
+        (path.dirname(savePath).includes(path.sep)
+            ? path.dirname(path.dirname(savePath))
+            : path.dirname(savePath))
+    const logger = new DownloadLogger(logDir)
+
+    logger.startSession('Single Video Download', {
+        url,
+        savePath,
+        qualityItag,
+        height,
+    })
 
     const cleanUrl = url.trim()
-    const ytDlpPath = await ensureYtDlpBinary()
-    const antiRateLimitArgs = await getAntiRateLimitArgs(win)
+    logger.info('Step 1/4: Resolving yt-dlp binary...')
+    const ytDlpPath = await ensureYtDlpBinary(false, logger)
+    logger.info(`yt-dlp binary located at: ${ytDlpPath}`)
+
+    logger.info('Step 2/4: Fetching anti-rate-limit parameters...')
+    const antiRateLimitArgs = await getAntiRateLimitArgs(win, logger)
+    logger.info(
+        `Anti-rate-limit arguments: ${JSON.stringify(antiRateLimitArgs)}`,
+    )
 
     const args: string[] = [
         ...antiRateLimitArgs,
@@ -136,6 +159,9 @@ export async function downloadYoutubeVideo(
 
     if (ffmpegPath && existsSync(ffmpegPath)) {
         args.push('--ffmpeg-location', ffmpegPath)
+        logger.info(`ffmpeg binary located at: ${ffmpegPath}`)
+    } else {
+        logger.warn('ffmpeg binary not found at default location.')
     }
 
     const isAudioOnly =
@@ -164,6 +190,9 @@ export async function downloadYoutubeVideo(
 
     args.push('-o', savePath, cleanUrl)
 
+    logger.info(`Step 3/4: Command args constructed: ${args.join(' ')}`)
+    logger.info(`Step 4/4: Spawning yt-dlp child process...`)
+
     startPower()
     updateState({
         isDownloading: true,
@@ -175,6 +204,8 @@ export async function downloadYoutubeVideo(
 
     const proc = spawn(ytDlpPath, args)
     onProcessStart(proc)
+    logger.info(`yt-dlp child process spawned with PID ${proc.pid}`)
+
     const stderrLines: string[] = []
 
     // Weighted multi-stream progress tracking
@@ -204,6 +235,8 @@ export async function downloadYoutubeVideo(
         proc.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n')
             for (const line of lines) {
+                logger.logStdoutLine(line)
+
                 // Detect stream switch via "Destination:" line
                 if (line.includes('[download] Destination:')) {
                     if (currentStream > 0 || lastRawPercent > 50) {
@@ -286,6 +319,7 @@ export async function downloadYoutubeVideo(
 
         proc.stderr.on('data', (data: Buffer) => {
             const str = data.toString()
+            logger.logStderrLine(str)
             if (!str.includes('WARNING:')) {
                 stderrLines.push(str.trim())
             }
@@ -295,6 +329,8 @@ export async function downloadYoutubeVideo(
             stopPower()
             onProcessEnd()
             updateState({ isDownloading: false })
+            logger.error('yt-dlp process encountered error', err)
+            await logger.endSession(false)
             await rm(savePath, { force: true }).catch(() => undefined)
             reject(err)
         })
@@ -303,8 +339,12 @@ export async function downloadYoutubeVideo(
             stopPower()
             onProcessEnd()
             updateState({ isDownloading: false })
+            logger.info(`yt-dlp process exited with code ${code}`)
             let finalPath = savePath
             if (!existsSync(finalPath)) {
+                logger.warn(
+                    `File not found at expected save path (${savePath}). Checking candidate file extensions...`,
+                )
                 const candidates = [
                     savePath + '.mp4',
                     savePath + '.mkv',
@@ -314,6 +354,9 @@ export async function downloadYoutubeVideo(
                 ]
                 for (const c of candidates) {
                     if (existsSync(c)) {
+                        logger.info(
+                            `Found candidate file at ${c}, renaming to ${savePath}`,
+                        )
                         await rename(c, savePath).catch(() => {
                             finalPath = c
                         })
@@ -324,6 +367,10 @@ export async function downloadYoutubeVideo(
             }
 
             if (code === 0 && existsSync(finalPath)) {
+                logger.info(
+                    `Video download successfully completed and verified at ${finalPath}`,
+                )
+                await logger.endSession(true)
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('youtube:progress', {
                         downloadedBytes: 100,
@@ -333,11 +380,16 @@ export async function downloadYoutubeVideo(
                 }
                 resolve({ filePath: finalPath, size: 0 })
             } else {
+                logger.error(
+                    `Video download failed (exit code ${code}, file verified: ${existsSync(finalPath)})`,
+                )
                 await rm(savePath, { force: true }).catch(() => undefined)
                 const errMsg =
                     stderrLines.length > 0
                         ? stderrLines.slice(-3).join(' ')
                         : `Video download failed with exit code ${code}`
+                logger.error(`Error details: ${errMsg}`)
+                await logger.endSession(false)
                 reject(new Error(errMsg))
             }
         })

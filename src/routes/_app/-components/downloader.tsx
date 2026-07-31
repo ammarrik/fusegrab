@@ -533,6 +533,7 @@ export function YoutubeDownloader() {
                     url: item.url,
                     savePath,
                     height: heightVal,
+                    rootDownloadDir: targetDir,
                 })
 
                 setItems((prev) =>
@@ -555,6 +556,7 @@ export function YoutubeDownloader() {
                 await window.api.youtube.downloadChannel({
                     channelUrl: item.url,
                     saveDir,
+                    rootDownloadDir: targetDir,
                 })
 
                 setItems((prev) =>

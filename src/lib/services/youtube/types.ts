@@ -41,6 +41,7 @@ export interface DownloadOptions {
     savePath: string
     qualityItag?: number
     height?: number
+    rootDownloadDir?: string
 }
 
 export interface DownloadChannelOptions {
@@ -48,6 +49,7 @@ export interface DownloadChannelOptions {
     saveDir: string
     qualityHeight?: number
     isAudioOnly?: boolean
+    rootDownloadDir?: string
 }
 
 export interface ChannelProgressEvent {

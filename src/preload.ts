@@ -64,12 +64,14 @@ contextBridge.exposeInMainWorld('api', {
             savePath: string
             qualityItag?: number
             height?: number
+            rootDownloadDir?: string
         }) => ipcRenderer.invoke('youtube:download', options),
         downloadChannel: (options: {
             channelUrl: string
             saveDir: string
             qualityHeight?: number
             isAudioOnly?: boolean
+            rootDownloadDir?: string
         }) => ipcRenderer.invoke('youtube:download-channel', options),
         cancelDownload: () => ipcRenderer.invoke('youtube:cancel-download'),
         getDownloadState: () =>
