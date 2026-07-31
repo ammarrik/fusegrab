@@ -1,30 +1,89 @@
 import type { LogLevel } from './types'
 
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import {
+    appendFileSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    statSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 export type { LogLevel }
 
-export class DownloadLogger {
-    private downloadDir: string | null = null
+const MAX_ERROR_LOGS_TO_KEEP = 10
+
+/**
+ * Application-wide session logger. One log file per app launch, written to
+ * userData/logs/ and optionally copied to the download root on error.
+ */
+export class SessionLogger {
     private logFilePath: string | null = null
+    private downloadRootDir: string | null = null
     private hasError = false
     private active = false
+    private sessionStartTime: string
 
-    constructor(downloadDir: string) {
-        this.downloadDir = downloadDir
+    constructor(logsDir: string) {
+        this.sessionStartTime = new Date()
+            .toISOString()
+            .replace(/[:.]/g, '-')
+            .slice(0, 19)
         try {
-            if (!existsSync(downloadDir)) {
-                mkdirSync(downloadDir, { recursive: true })
+            if (!existsSync(logsDir)) {
+                mkdirSync(logsDir, { recursive: true })
             }
-            this.logFilePath = path.join(downloadDir, '.fusegrab_download.log')
+            this.logFilePath = path.join(
+                logsDir,
+                `session-${this.sessionStartTime}.log`,
+            )
             this.active = true
+            this.pruneOldErrorLogs(logsDir)
         } catch (e) {
-            console.error('Failed to initialize DownloadLogger:', e)
+            console.error('Failed to initialize SessionLogger:', e)
             this.active = false
         }
+    }
+
+    public get filePath(): string | null {
+        return this.logFilePath
+    }
+
+    /**
+     * Prune old session logs, keeping the most recent MAX_ERROR_LOGS_TO_KEEP
+     * including the one this session is about to write. Clean sessions delete
+     * their own log at quit, so what accumulates here is error logs.
+     */
+    private pruneOldErrorLogs(logsDir: string) {
+        try {
+            const files = readdirSync(logsDir)
+                .filter((f) => f.startsWith('session-') && f.endsWith('.log'))
+                .map((f) => ({
+                    path: path.join(logsDir, f),
+                    mtime: statSync(path.join(logsDir, f)).mtime.getTime(),
+                }))
+                .sort((a, b) => b.mtime - a.mtime)
+
+            // -1 leaves room for the log this session is about to create.
+            for (const file of files.slice(MAX_ERROR_LOGS_TO_KEEP - 1)) {
+                try {
+                    unlinkSync(file.path)
+                } catch {
+                    // A log held open elsewhere just survives to the next launch.
+                }
+            }
+        } catch (e) {
+            // Non-critical, don't block startup
+            console.error('Failed to prune old logs:', e)
+        }
+    }
+
+    public setDownloadRoot(dir: string) {
+        this.downloadRootDir = dir
     }
 
     public startSession(sessionTitle: string, details?: Record<string, any>) {
@@ -32,8 +91,7 @@ export class DownloadLogger {
         const timestamp = new Date().toISOString()
         const banner = [
             '================================================================================',
-            `[${timestamp}] STARTING DOWNLOAD SESSION: ${sessionTitle}`,
-            `[${timestamp}] Download Directory: ${this.downloadDir}`,
+            `[${timestamp}] STARTING SESSION: ${sessionTitle}`,
             `[${timestamp}] OS: ${process.platform} ${process.arch} (${os.release()})`,
             `[${timestamp}] Node: ${process.version}, Electron: ${process.versions.electron || 'N/A'}`,
             ...(details
@@ -44,6 +102,43 @@ export class DownloadLogger {
             '================================================================================\n',
         ].join('\n')
         this.write(banner)
+    }
+
+    /**
+     * Marks the start of one download within the session. Unlike startSession,
+     * this does not reset error state — the session log spans every download.
+     */
+    public startDownload(title: string, details?: Record<string, any>) {
+        if (!this.active || !this.logFilePath) return
+        const timestamp = new Date().toISOString()
+        const banner = [
+            '\n--------------------------------------------------------------------------------',
+            `[${timestamp}] DOWNLOAD STARTED: ${title}`,
+            ...(details
+                ? [
+                      `[${timestamp}] Details: ${JSON.stringify(details, null, 2)}`,
+                  ]
+                : []),
+            '--------------------------------------------------------------------------------',
+        ].join('\n')
+        this.write(banner + '\n')
+    }
+
+    /**
+     * Marks the end of one download. A failure here flags the whole session as
+     * errored so the log survives quit, but does not close the log.
+     */
+    public endDownload(title: string, wasSuccessful = true) {
+        if (!this.active || !this.logFilePath) return
+        if (!wasSuccessful) {
+            this.hasError = true
+        }
+        const timestamp = new Date().toISOString()
+        const status = wasSuccessful ? 'SUCCEEDED' : 'FAILED'
+        this.write(
+            `[${timestamp}] DOWNLOAD ${status}: ${title}\n` +
+                '--------------------------------------------------------------------------------\n',
+        )
     }
 
     public info(message: string) {
@@ -113,11 +208,11 @@ export class DownloadLogger {
         try {
             appendFileSync(this.logFilePath, data, 'utf-8')
         } catch (e) {
-            console.error('Failed writing to download log:', e)
+            console.error('Failed writing to session log:', e)
         }
     }
 
-    public async endSession(wasSuccessful = true): Promise<void> {
+    public endSession(wasSuccessful = true): void {
         if (!this.active || !this.logFilePath) return
         this.active = false
 
@@ -131,27 +226,70 @@ export class DownloadLogger {
             : 'COMPLETED SUCCESSFULLY'
         const footer = [
             `\n================================================================================`,
-            `[${timestamp}] SESSION ENDED: ${endStatus}`,
-            `[${timestamp}] Log file: ${
-                this.hasError
-                    ? 'RETAINED at ' + this.logFilePath
-                    : 'DELETING (All downloads succeeded)'
-            }`,
+            `[${timestamp}] APP SESSION ENDED: ${endStatus}`,
+            `[${timestamp}] Canonical log: ${this.logFilePath}`,
+            ...(this.hasError && this.downloadRootDir
+                ? [
+                      `[${timestamp}] Error copy will be saved to: ${path.join(
+                          this.downloadRootDir,
+                          `fusegrab-errors-${this.sessionStartTime}.log`,
+                      )}`,
+                  ]
+                : []),
             '================================================================================\n',
         ].join('\n')
 
         this.write(footer)
 
-        if (
-            !this.hasError &&
-            this.logFilePath &&
-            existsSync(this.logFilePath)
-        ) {
+        if (this.hasError && this.downloadRootDir) {
             try {
-                await rm(this.logFilePath, { force: true })
+                const errorLogPath = path.join(
+                    this.downloadRootDir,
+                    `fusegrab-errors-${this.sessionStartTime}.log`,
+                )
+                if (!existsSync(this.downloadRootDir)) {
+                    mkdirSync(this.downloadRootDir, { recursive: true })
+                }
+                // Synchronous copy so Electron quit doesn't interrupt us
+                const content = readFileSync(this.logFilePath, 'utf-8')
+                writeFileSync(errorLogPath, content, 'utf-8')
             } catch (e) {
-                console.error('Failed to remove download log file:', e)
+                console.error('Failed to copy error log to download root:', e)
             }
         }
+
+        if (!this.hasError && this.logFilePath && existsSync(this.logFilePath)) {
+            try {
+                unlinkSync(this.logFilePath)
+            } catch (e) {
+                console.error('Failed to remove clean session log:', e)
+            }
+        }
+    }
+}
+
+// Global singleton instance. main.ts calls initSessionLogger() at app ready
+// with Electron's userData path; the download services just call
+// getSessionLogger() and get that same instance.
+let sessionLogger: SessionLogger | null = null
+
+export function initSessionLogger(logsDir: string): SessionLogger {
+    sessionLogger = new SessionLogger(logsDir)
+    return sessionLogger
+}
+
+export function getSessionLogger(): SessionLogger {
+    if (!sessionLogger) {
+        // Fallback for any path that logs before init (shouldn't normally hit).
+        sessionLogger = new SessionLogger(
+            path.join(os.tmpdir(), 'fusegrab-logs'),
+        )
+    }
+    return sessionLogger
+}
+
+export function shutdownLogger(): void {
+    if (sessionLogger) {
+        sessionLogger.endSession(true)
     }
 }

@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url'
 
 import { toFriendlyError } from './lib/network-error'
 import {
+    initSessionLogger,
+    shutdownLogger,
+} from './lib/services/logger/service'
+import {
     chooseDirectory,
     chooseSavePath,
     closeAllWriteStreams,
@@ -137,6 +141,16 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.on('ready', async () => {
+    // Initialize session logger
+    const logger = initSessionLogger(
+        path.join(app.getPath('userData'), 'logs'),
+    )
+    logger.startSession('FuseGrab Application', {
+        platform: process.platform,
+        arch: process.arch,
+        version: app.getVersion(),
+    })
+
     // Clear any installer left in temp by a previous (now-applied) update.
     await cleanupStaleInstallers()
 
@@ -154,7 +168,8 @@ app.on('ready', async () => {
 // A cancelled or crashed export can leave a file handle open; make sure they're
 // all closed (and their partial files removed) before the process goes away.
 app.on('before-quit', () => {
-    void closeAllWriteStreams()
+    closeAllWriteStreams()
+    shutdownLogger()
 })
 
 // Quit when all windows are closed, except on macOS.

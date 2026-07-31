@@ -1,73 +1,173 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import {
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    writeFileSync,
+} from 'node:fs'
+import { mkdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { DownloadLogger } from './service'
+import { SessionLogger } from './service'
 
-describe('DownloadLogger', () => {
-    let testDir: string
+describe('SessionLogger', () => {
+    let logsDir: string
+    let downloadDir: string
 
-    beforeEach(() => {
-        testDir = path.join(os.tmpdir(), `fusegrab_test_logger_${Date.now()}`)
+    beforeEach(async () => {
+        const base = path.join(os.tmpdir(), `fusegrab_test_logger_${Date.now()}`)
+        logsDir = path.join(base, 'logs')
+        downloadDir = path.join(base, 'Downloads')
+        await mkdir(downloadDir, { recursive: true })
     })
 
     afterEach(async () => {
-        await rm(testDir, { recursive: true, force: true }).catch(() => undefined)
+        await rm(path.dirname(logsDir), {
+            recursive: true,
+            force: true,
+        }).catch(() => undefined)
     })
 
-    it('creates hidden log file and deletes it on successful endSession', async () => {
-        const logger = new DownloadLogger(testDir)
-        const logFilePath = path.join(testDir, '.fusegrab_download.log')
+    const sessionLogs = () =>
+        existsSync(logsDir)
+            ? readdirSync(logsDir).filter((f) => f.startsWith('session-'))
+            : []
 
-        logger.startSession('Test Video Download', { url: 'https://youtube.com/watch?v=123' })
+    it('writes one file per session and deletes it on a clean end', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
+
+        logger.startDownload('Video A')
         logger.info('Resolving binary')
         logger.logStdoutLine('[download] 50% of 10MiB')
-        logger.info('Download complete')
+        logger.endDownload('Video A', true)
 
-        expect(existsSync(logFilePath)).toBe(true)
+        expect(sessionLogs()).toHaveLength(1)
 
-        await logger.endSession(true)
+        logger.endSession(true)
 
-        // Log file should be deleted on success
-        expect(existsSync(logFilePath)).toBe(false)
+        expect(sessionLogs()).toHaveLength(0)
     })
 
-    it('retains hidden log file when session fails or error is logged', async () => {
-        const logger = new DownloadLogger(testDir)
-        const logFilePath = path.join(testDir, '.fusegrab_download.log')
+    it('keeps every download in a single file across the session', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
 
-        logger.startSession('Failing Video Download', { url: 'https://youtube.com/watch?v=456' })
-        logger.info('Step 1: Starting')
-        logger.error('Failed to download video format', new Error('Network timeout'))
+        logger.startDownload('Video A')
+        logger.info('First download')
+        logger.endDownload('Video A', true)
 
-        expect(existsSync(logFilePath)).toBe(true)
+        logger.startDownload('Video B')
+        logger.info('Second download')
+        logger.error('Failed to download', new Error('Network timeout'))
+        logger.endDownload('Video B', false)
 
-        await logger.endSession(false)
-
-        // Log file MUST be retained on failure
-        expect(existsSync(logFilePath)).toBe(true)
-
-        const content = readFileSync(logFilePath, 'utf-8')
-        expect(content).toContain('STARTING DOWNLOAD SESSION: Failing Video Download')
-        expect(content).toContain('[ERROR] Failed to download video format')
+        expect(sessionLogs()).toHaveLength(1)
+        const content = readFileSync(
+            path.join(logsDir, sessionLogs()[0]),
+            'utf-8',
+        )
+        expect(content).toContain('DOWNLOAD STARTED: Video A')
+        expect(content).toContain('DOWNLOAD SUCCEEDED: Video A')
+        expect(content).toContain('DOWNLOAD STARTED: Video B')
+        expect(content).toContain('DOWNLOAD FAILED: Video B')
         expect(content).toContain('Network timeout')
-        expect(content).toContain('SESSION ENDED: FINISHED WITH ERRORS')
     })
 
-    it('logs binary warnings and fetch failures', async () => {
-        const logger = new DownloadLogger(testDir)
-        const logFilePath = path.join(testDir, '.fusegrab_download.log')
+    it('retains the log at quit when any download in the session errored', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
 
-        logger.startSession('Binary Check Session')
-        logger.info('Resolving aria2 binary...')
-        logger.warn('Failed to download/load aria2 binary: HTTP 404 Not Found', new Error('HTTP 404'))
+        logger.startDownload('Video A')
+        logger.endDownload('Video A', true)
 
-        expect(existsSync(logFilePath)).toBe(true)
-        await logger.endSession(false)
+        logger.startDownload('Video B')
+        logger.error('Boom', new Error('Network timeout'))
+        logger.endDownload('Video B', false)
 
-        const content = readFileSync(logFilePath, 'utf-8')
-        expect(content).toContain('[WARN] Failed to download/load aria2 binary: HTTP 404 Not Found | Details: HTTP 404')
+        // Quit reports success, but the earlier failure must still win.
+        logger.endSession(true)
+
+        expect(sessionLogs()).toHaveLength(1)
+        const content = readFileSync(
+            path.join(logsDir, sessionLogs()[0]),
+            'utf-8',
+        )
+        expect(content).toContain('APP SESSION ENDED: FINISHED WITH ERRORS')
+    })
+
+    it('copies the log to the download root on error', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.setDownloadRoot(downloadDir)
+        logger.startSession('FuseGrab Application')
+
+        logger.startDownload('Video A')
+        logger.error('Boom', new Error('Network timeout'))
+        logger.endDownload('Video A', false)
+        logger.endSession(true)
+
+        const copies = readdirSync(downloadDir).filter((f) =>
+            f.startsWith('fusegrab-errors-'),
+        )
+        expect(copies).toHaveLength(1)
+        expect(
+            readFileSync(path.join(downloadDir, copies[0]), 'utf-8'),
+        ).toContain('Network timeout')
+    })
+
+    it('does not copy anything to the download root on a clean session', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.setDownloadRoot(downloadDir)
+        logger.startSession('FuseGrab Application')
+        logger.startDownload('Video A')
+        logger.endDownload('Video A', true)
+        logger.endSession(true)
+
+        expect(readdirSync(downloadDir)).toHaveLength(0)
+    })
+
+    it('flags the session when yt-dlp writes an error to stderr', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
+        logger.logStderrLine('ERROR: unable to download video data')
+        logger.endSession(true)
+
+        expect(sessionLogs()).toHaveLength(1)
+    })
+
+    it('logs binary warnings without flagging the session', () => {
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
+        logger.warn(
+            'Failed to download/load aria2 binary: HTTP 404 Not Found',
+            new Error('HTTP 404'),
+        )
+
+        const logPath = path.join(logsDir, sessionLogs()[0])
+        expect(readFileSync(logPath, 'utf-8')).toContain(
+            '[WARN] Failed to download/load aria2 binary: HTTP 404 Not Found | Details: HTTP 404',
+        )
+
+        logger.endSession(true)
+        expect(sessionLogs()).toHaveLength(0)
+    })
+
+    it('prunes old session logs down to the retention limit', () => {
+        mkdirSync(logsDir, { recursive: true })
+        // 12 stale error logs from previous sessions
+        for (let i = 0; i < 12; i++) {
+            const p = path.join(logsDir, `session-2026-01-0${i % 10}-old${i}.log`)
+            writeFileSync(p, 'stale\n', { flag: 'w' })
+        }
+        expect(sessionLogs()).toHaveLength(12)
+
+        // Constructing a new session prunes on startup
+        const logger = new SessionLogger(logsDir)
+        logger.startSession('FuseGrab Application')
+
+        // 9 retained + the one this session just created
+        expect(sessionLogs()).toHaveLength(10)
     })
 })

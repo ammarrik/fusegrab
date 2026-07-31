@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 
-import { DownloadLogger } from '../logger/service'
+import { getSessionLogger } from '../logger/service'
 
 import {
     ensureFfmpegBinary,
@@ -131,9 +131,11 @@ export async function downloadYoutubeVideo(
         (path.dirname(savePath).includes(path.sep)
             ? path.dirname(path.dirname(savePath))
             : path.dirname(savePath))
-    const logger = new DownloadLogger(logDir)
+    const logger = getSessionLogger()
+    logger.setDownloadRoot(logDir)
 
-    logger.startSession('Single Video Download', {
+    const downloadLabel = `Single Video Download — ${path.basename(savePath)}`
+    logger.startDownload(downloadLabel, {
         url,
         savePath,
         qualityItag,
@@ -322,7 +324,7 @@ export async function downloadYoutubeVideo(
             onProcessEnd()
             updateState({ isDownloading: false })
             logger.error('yt-dlp process encountered error', err)
-            await logger.endSession(false)
+            logger.endDownload(downloadLabel, false)
             await rm(savePath, { force: true }).catch(() => undefined)
             reject(err)
         })
@@ -362,7 +364,7 @@ export async function downloadYoutubeVideo(
                 logger.info(
                     `Video download successfully completed and verified at ${finalPath}`,
                 )
-                await logger.endSession(true)
+                logger.endDownload(downloadLabel, true)
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('youtube:progress', {
                         downloadedBytes: 100,
@@ -381,7 +383,7 @@ export async function downloadYoutubeVideo(
                         ? stderrLines.slice(-3).join(' ')
                         : `Video download failed with exit code ${code}`
                 logger.error(`Error details: ${errMsg}`)
-                await logger.endSession(false)
+                logger.endDownload(downloadLabel, false)
                 reject(new Error(errMsg))
             }
         })

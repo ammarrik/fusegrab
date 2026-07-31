@@ -12,7 +12,7 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 
-import { DownloadLogger } from '../logger/service'
+import { getSessionLogger } from '../logger/service'
 
 import {
     ensureFfmpegBinary,
@@ -240,9 +240,11 @@ export async function downloadYoutubeChannel(
     const { channelUrl, saveDir, qualityHeight, isAudioOnly, rootDownloadDir } =
         options
     const logDir = rootDownloadDir || path.dirname(saveDir)
-    const logger = new DownloadLogger(logDir)
+    const logger = getSessionLogger()
+    logger.setDownloadRoot(logDir)
 
-    logger.startSession('Channel/Playlist Download', {
+    const downloadLabel = `Channel/Playlist Download — ${path.basename(saveDir)}`
+    logger.startDownload(downloadLabel, {
         channelUrl,
         saveDir,
         qualityHeight,
@@ -390,7 +392,7 @@ export async function downloadYoutubeChannel(
             onProcessEnd()
             updateState({ isDownloading: false })
             logger.error('yt-dlp channel process encountered error', err)
-            await logger.endSession(false)
+            logger.endDownload(downloadLabel, false)
             reject(err)
         })
 
@@ -401,7 +403,7 @@ export async function downloadYoutubeChannel(
             logger.info(`yt-dlp process exited with code ${code}`)
             if (code === 0) {
                 logger.info('Channel download successfully completed.')
-                await logger.endSession(true)
+                logger.endDownload(downloadLabel, true)
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('youtube:channel-progress', {
                         currentItem: totalItems || currentItem,
@@ -418,7 +420,7 @@ export async function downloadYoutubeChannel(
                         ? stderrLines.slice(-3).join(' ')
                         : `Channel download exited with code ${code}`
                 logger.error(`Channel download failed: ${errMsg}`)
-                await logger.endSession(false)
+                logger.endDownload(downloadLabel, false)
                 reject(new Error(errMsg))
             }
         })

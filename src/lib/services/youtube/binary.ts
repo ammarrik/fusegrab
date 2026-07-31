@@ -1,4 +1,4 @@
-import type { DownloadLogger } from '../logger/service'
+import type { SessionLogger } from '../logger/service'
 import type { BrowserWindow } from 'electron'
 
 import { app } from 'electron'
@@ -32,7 +32,7 @@ function getDownloadUrl(): string {
 
 export async function ensureYtDlpBinary(
     forceUpdate = false,
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string> {
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binName = getBinaryName()
@@ -178,7 +178,7 @@ function uniquePaths(paths: Array<string | null | undefined>): string[] {
 
 export async function ensureFfmpegBinary(
     bundledPath?: string | null,
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string | null> {
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binPath = path.join(binDir, getFfmpegBinaryName())
@@ -278,7 +278,7 @@ function getAria2BinaryName(): string {
 }
 
 export async function ensureAria2Binary(
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string | null> {
     const binDir = path.join(app.getPath('userData'), 'bin')
     const binName = getAria2BinaryName()
@@ -442,7 +442,7 @@ let cachedJsRuntime: string | null | undefined
  * pointing yt-dlp at a runtime that isn't there.
  */
 async function resolveJsRuntime(
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string | null> {
     if (cachedJsRuntime !== undefined) return cachedJsRuntime
 
@@ -546,7 +546,7 @@ function readExistingCookieJar(filePath: string): Map<string, string> {
 }
 
 export async function getJsRuntimeArgs(
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string[]> {
     const runtime = await resolveJsRuntime(logger)
     return runtime ? ['--js-runtimes', `node:${runtime}`] : []
@@ -554,7 +554,7 @@ export async function getJsRuntimeArgs(
 
 export async function getAntiRateLimitArgs(
     win?: BrowserWindow | null,
-    logger?: DownloadLogger,
+    logger?: SessionLogger,
 ): Promise<string[]> {
     const userAgent =
         (win && !win.isDestroyed() && win.webContents.getUserAgent()) ||
