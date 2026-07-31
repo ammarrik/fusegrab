@@ -31,42 +31,89 @@ if (nodeVersion >= 26) {
     process.exit(1)
 }
 
-const forgeCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+// Invoke the forge and make-nsis entry points with the current Node binary
+// rather than going through the `pnpm` shim. Since the fix for CVE-2024-27980,
+// Node refuses to spawn a .cmd/.bat file without `shell: true` and fails with
+// EINVAL (surfacing as a null exit code and no output). Calling the JS entry
+// directly sidesteps both that and the arg-escaping hazard of a shell.
+const FORGE_BIN = join(
+    ROOT,
+    'node_modules',
+    '@electron-forge',
+    'cli',
+    'dist',
+    'electron-forge.js',
+)
 
 function runForgeMake(platform, arch) {
     console.log(`\n==================================================`)
     console.log(`[build-installers] Building for ${platform} (${arch})...`)
     console.log(`==================================================\n`)
+    // Pass --require as a real argv flag rather than through NODE_OPTIONS.
+    // Node parses NODE_OPTIONS with shell-like quoting, which eats the
+    // backslashes in a Windows path ("C:\Users\..." arrives as "C:Users..."
+    // and the preload fails to resolve). As a bonus this scopes the preload to
+    // the forge process alone instead of every descendant Node process.
     const keepAlivePath = join(ROOT, 'scripts', 'keep-alive.cjs')
-    const existingNodeOpts = process.env.NODE_OPTIONS ?? ''
-    const nodeOpts = existingNodeOpts
-        ? `${existingNodeOpts} --require "${keepAlivePath}"`
-        : `--require "${keepAlivePath}"`
-
-    const pathSep = process.platform === 'win32' ? ';' : ':'
     const extraPaths =
         process.platform === 'win32'
             ? ''
             : ':/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin'
 
     const result = spawnSync(
-        forgeCmd,
-        ['exec', 'electron-forge', 'make', '--platform', platform, '--arch', arch],
+        process.execPath,
+        [
+            '--require',
+            keepAlivePath,
+            FORGE_BIN,
+            'make',
+            '--platform',
+            platform,
+            '--arch',
+            arch,
+        ],
         {
             cwd: ROOT,
             stdio: 'inherit',
             env: {
                 ...process.env,
-                NODE_OPTIONS: nodeOpts,
                 ELECTRON_GET_SKIP_SUMMARY: '1',
                 PATH: `${process.env.PATH ?? ''}${extraPaths}`,
             },
         },
     )
+    if (result.error) {
+        console.error(
+            `[build-installers] Failed to launch forge for ${platform} (${arch}): ${result.error.message}`,
+        )
+        return false
+    }
     if (result.status !== 0) {
         console.error(
             `[build-installers] Failed to build for ${platform} (${arch}) with exit code ${result.status}`,
         )
+        return false
+    }
+    return true
+}
+
+// Wraps the already-packaged out/FuseGrab-win32-<arch> in the NSIS wizard
+// installer. Calls make-nsis.mjs directly instead of the make:nsis script,
+// which would re-run `package` over output forge just built.
+function runMakeNsis(arch) {
+    const result = spawnSync(
+        process.execPath,
+        [join(ROOT, 'scripts', 'make-nsis.mjs'), `--arch=${arch}`],
+        { cwd: ROOT, stdio: 'inherit' },
+    )
+    if (result.error) {
+        console.warn(
+            `[build-installers] Warning: could not launch NSIS build for ${arch}: ${result.error.message}`,
+        )
+        return false
+    }
+    if (result.status !== 0) {
+        console.warn(`[build-installers] Warning: NSIS build for ${arch} failed.`)
         return false
     }
     return true
@@ -88,31 +135,19 @@ if (target === 'mac' || target === 'all') {
 
 if (target === 'win-arm' || target === 'win' || target === 'all') {
     // Windows ARM64 (Windows on ARM)
-    success = runForgeMake('win32', 'arm64') && success
-    if (process.platform === 'win32') {
-        const nsisRes = spawnSync(
-            forgeCmd,
-            ['run', 'make:nsis', '--', '--arch=arm64'],
-            { cwd: ROOT, stdio: 'inherit' },
-        )
-        if (nsisRes.status !== 0) {
-            console.warn('[build-installers] Warning: NSIS build for arm64 failed.')
-        }
+    const packaged = runForgeMake('win32', 'arm64')
+    success = packaged && success
+    if (packaged && process.platform === 'win32') {
+        runMakeNsis('arm64')
     }
 }
 
 if (target === 'win-x64' || target === 'win' || target === 'all') {
     // Windows 11 / 10 64-bit (x64)
-    success = runForgeMake('win32', 'x64') && success
-    if (process.platform === 'win32') {
-        const nsisRes = spawnSync(
-            forgeCmd,
-            ['run', 'make:nsis', '--', '--arch=x64'],
-            { cwd: ROOT, stdio: 'inherit' },
-        )
-        if (nsisRes.status !== 0) {
-            console.warn('[build-installers] Warning: NSIS build for x64 failed.')
-        }
+    const packaged = runForgeMake('win32', 'x64')
+    success = packaged && success
+    if (packaged && process.platform === 'win32') {
+        runMakeNsis('x64')
     }
 }
 
