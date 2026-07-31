@@ -805,6 +805,36 @@ export function YoutubeDownloader() {
         }
     }
 
+    // Windows has no traffic lights on the left, so the brand sits there and the
+    // search takes the center. macOS keeps the brand centered and the search on
+    // the right, clear of the traffic lights.
+    const searchInput = (
+        <InputRoot className="h-6.5 w-44 rounded-full lg:w-56">
+            <InputIcon>
+                <Search className="size-3" />
+            </InputIcon>
+            <InputField
+                placeholder="Search in the List"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-xs"
+            />
+        </InputRoot>
+    )
+
+    const brand = (
+        <div className="flex items-center gap-2">
+            <img
+                src={appLogo}
+                alt="FuseGrab"
+                className="h-5 w-5 rounded-xs object-contain shadow-xs"
+            />
+            <span className="text-foreground text-xs font-semibold tracking-wide">
+                FuseGrab
+            </span>
+        </div>
+    )
+
     return (
         <div className="bg-background text-foreground flex h-full w-full flex-col overflow-hidden font-sans select-none">
             {/* Top Bar / App Header */}
@@ -812,35 +842,37 @@ export function YoutubeDownloader() {
                 className="border-border bg-surface relative flex h-10 w-full shrink-0 items-center justify-between border-b px-3 pr-1.5 pl-1"
                 {...dragProps}
             >
-                <div className="flex items-center gap-3">
-                    {isMac && <div className="w-16 shrink-0" />}
-                </div>
+                {isMac ? (
+                    <>
+                        <div className="flex items-center gap-3">
+                            <div className="w-16 shrink-0" />
+                        </div>
 
-                {/* Centered App Title */}
-                <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
-                    <img
-                        src={appLogo}
-                        alt="FuseGrab"
-                        className="h-5 w-5 rounded-xs object-contain shadow-xs"
-                    />
-                    <span className="text-foreground text-xs font-semibold tracking-wide">
-                        FuseGrab
-                    </span>
-                </div>
+                        {/* Centered App Title */}
+                        <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
+                            {brand}
+                        </div>
 
-                <div className="flex items-center gap-3">
-                    <InputRoot className="h-6.5 w-44 rounded-full lg:w-56">
-                        <InputIcon>
-                            <Search className="size-3" />
-                        </InputIcon>
-                        <InputField
-                            placeholder="Search in the List"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="text-xs"
-                        />
-                    </InputRoot>
-                </div>
+                        <div className="flex items-center gap-3">
+                            {searchInput}
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex items-center gap-3 pl-1">
+                            {brand}
+                        </div>
+
+                        {/* Centered Search */}
+                        <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center">
+                            <div className="pointer-events-auto">
+                                {searchInput}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3" />
+                    </>
+                )}
             </div>
 
             {/* Action Toolbar */}

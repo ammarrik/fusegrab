@@ -113,6 +113,15 @@ const createWindow = () => {
 
     setUpdaterWindow(mainWindow)
 
+    // The custom titlebar mirrors the maximized state (restore vs maximize icon,
+    // and the root `data-maximized` flag), so push every change to the renderer.
+    const emitMaximized = (maximized: boolean) => {
+        if (mainWindow.isDestroyed()) return
+        mainWindow.webContents.send('window:maximized-changed', maximized)
+    }
+    mainWindow.on('maximize', () => emitMaximized(true))
+    mainWindow.on('unmaximize', () => emitMaximized(false))
+
     // Intercept standard target="_blank" links and open in host OS default web browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url).catch((err) => {
@@ -206,6 +215,19 @@ function handle(
 
 handle('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
+})
+handle('window:toggle-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    if (win.isMaximized()) {
+        win.unmaximize()
+    } else {
+        win.maximize()
+    }
+})
+handle('window:is-maximized', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win?.isMaximized() ?? false
 })
 handle('window:close', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close()

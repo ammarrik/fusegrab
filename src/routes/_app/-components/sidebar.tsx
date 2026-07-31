@@ -34,8 +34,8 @@ export function DownloaderSidebar({
     )
 
     return (
-        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pr-0 pb-3 pl-3 select-none">
-            <div className="flex flex-col gap-4 overflow-y-auto pr-1.5">
+        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pr-0 pb-3 pl-2 select-none">
+            <div className="flex flex-col gap-4 overflow-y-auto pr-2">
                 <div>
                     <div className="bg-surface text-muted-foreground sticky top-0 z-10 px-2 pt-1 pb-1.5 text-[10px] font-semibold tracking-wider uppercase">
                         Categories
@@ -83,7 +83,7 @@ export function DownloaderSidebar({
                         <button
                             type="button"
                             onClick={() => setIsChannelsOpen((prev) => !prev)}
-                            className="text-foreground/80 hover:bg-muted hover:text-foreground flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer"
+                            className="text-foreground/80 hover:bg-muted hover:text-foreground flex w-full cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors"
                         >
                             <div className="flex min-w-0 items-center gap-2.5">
                                 {isChannelsOpen ? (
@@ -103,7 +103,7 @@ export function DownloaderSidebar({
                         {isChannelsOpen && (
                             <div className="flex flex-col gap-1">
                                 {channelList.length === 0 ? (
-                                    <div className="text-muted-foreground/60 pl-9 pr-2.5 py-1.5 text-[11px] italic">
+                                    <div className="text-muted-foreground/60 py-1.5 pr-2.5 pl-9 text-[11px] italic">
                                         No channels or playlists
                                     </div>
                                 ) : (
@@ -118,7 +118,7 @@ export function DownloaderSidebar({
                                                 onClick={() =>
                                                     setActiveFilter(filterKey)
                                                 }
-                                                className={`flex w-full items-center justify-between rounded-lg pl-9 pr-2.5 py-2 text-xs font-medium transition-colors ${
+                                                className={`flex w-full items-center justify-between rounded-lg py-2 pr-2.5 pl-9 text-xs font-medium transition-colors ${
                                                     isActive
                                                         ? 'bg-accent text-foreground'
                                                         : 'text-foreground/80 hover:bg-muted hover:text-foreground'
