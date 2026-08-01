@@ -1,4 +1,26 @@
 import type { YoutubeChannelVideoItem } from './types'
+import type { BrowserWindow } from 'electron'
+
+// Scraping runs in an offscreen BrowserWindow. Those count towards Electron's
+// window list, so one left open stops `window-all-closed` from ever firing and
+// the app never quits. Track them so shutdown can tear them all down.
+const scraperWindows = new Set<BrowserWindow>()
+
+export function destroyScraperWindows(): void {
+    for (const win of scraperWindows) {
+        try {
+            win.destroy()
+        } catch {}
+    }
+    scraperWindows.clear()
+}
+
+function trackScraperWindow(win: BrowserWindow): void {
+    scraperWindows.add(win)
+    win.on('closed', () => scraperWindows.delete(win))
+}
+
+export { trackScraperWindow as __trackScraperWindow }
 
 function toChannelVideosUrl(raw: string): string {
     if (raw.includes('list=')) {
@@ -186,6 +208,9 @@ async function runBackgroundScrolling(
             totalCount < targetNeeded &&
             !reachedEnd
         ) {
+            // Shutdown destroys the window under us; stop instead of throwing
+            // into the catch below on the next executeJavaScript call.
+            if (win.isDestroyed()) return
             scrollAttempts++
             await win.webContents.executeJavaScript(`
                 (() => {
@@ -312,6 +337,8 @@ export async function scrapeChannelWithBrowser(
             nodeIntegration: false,
         },
     })
+
+    trackScraperWindow(win)
 
     win.webContents.setAudioMuted(true)
     win.webContents.setUserAgent(

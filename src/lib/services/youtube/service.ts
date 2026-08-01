@@ -32,6 +32,8 @@ export type {
     YoutubeVideoInfo,
 } from './types'
 
+export { destroyScraperWindows } from './channel-scraper'
+
 let activeChildProcess: ChildProcess | null = null
 let powerBlockerId: number | null = null
 
@@ -79,11 +81,9 @@ export function cancelYoutubeDownload() {
         if (pid) {
             if (process.platform === 'win32') {
                 try {
-                    execFile(
-                        'taskkill',
-                        ['/F', '/T', '/PID', String(pid)],
-                        { windowsHide: true },
-                    )
+                    execFile('taskkill', ['/F', '/T', '/PID', String(pid)], {
+                        windowsHide: true,
+                    })
                 } catch {}
             } else {
                 try {

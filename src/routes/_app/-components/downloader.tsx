@@ -30,39 +30,52 @@ const isMac =
         (typeof navigator !== 'undefined' &&
             navigator.userAgent.includes('Mac')))
 
+const ITEMS_KEY = 'fuse_download_items_v2'
+
+// The table is mirrored into the main process, which writes it to disk
+// atomically and flushes on quit. localStorage is only read as a fallback so
+// tables saved by older builds survive the upgrade.
+function loadSavedItems(): DownloadItem[] | null {
+    const fromStore = window.store?.getSync<DownloadItem[]>(ITEMS_KEY)
+    if (Array.isArray(fromStore)) return fromStore
+
+    const saved = localStorage.getItem(ITEMS_KEY)
+    if (!saved) return null
+    try {
+        const parsed: unknown = JSON.parse(saved)
+        return Array.isArray(parsed) ? (parsed as DownloadItem[]) : null
+    } catch {
+        return null
+    }
+}
+
 export function YoutubeDownloader() {
     const dragProps = useWindowDrag()
 
     const [items, setItems] = useState<DownloadItem[]>(() => {
-        const saved = localStorage.getItem('fuse_download_items_v2')
-        if (saved) {
-            try {
-                const parsed: DownloadItem[] = JSON.parse(saved)
-                return parsed.map((item) => {
-                    const isSingleUrl =
-                        item.isSingleUrl ?? item.type === 'video'
-                    // Nothing may auto-start on launch. A pending retry is parked
-                    // as Ready with a fresh budget so the sweep does not fire off
-                    // a download the moment the window opens.
-                    if (
-                        item.status === 'Downloading' ||
-                        item.status === 'Queued' ||
-                        item.status === 'Retry' ||
-                        item.statusStage === 'Preparing...'
-                    ) {
-                        return {
-                            ...item,
-                            isSingleUrl,
-                            status: 'Ready' as const,
-                            statusStage: undefined,
-                            retryCount: undefined,
-                        }
-                    }
-                    return { ...item, isSingleUrl }
-                })
-            } catch {}
-        }
-        return []
+        const parsed = loadSavedItems()
+        if (!parsed) return []
+        return parsed.map((item) => {
+            const isSingleUrl = item.isSingleUrl ?? item.type === 'video'
+            // Nothing may auto-start on launch. A pending retry is parked
+            // as Ready with a fresh budget so the sweep does not fire off
+            // a download the moment the window opens.
+            if (
+                item.status === 'Downloading' ||
+                item.status === 'Queued' ||
+                item.status === 'Retry' ||
+                item.statusStage === 'Preparing...'
+            ) {
+                return {
+                    ...item,
+                    isSingleUrl,
+                    status: 'Ready' as const,
+                    statusStage: undefined,
+                    retryCount: undefined,
+                }
+            }
+            return { ...item, isSingleUrl }
+        })
     })
 
     const [activeFilter, setActiveFilter] = useState('all')
@@ -131,8 +144,23 @@ export function YoutubeDownloader() {
     }, [selectedByFilter])
 
     useEffect(() => {
-        localStorage.setItem('fuse_download_items_v2', JSON.stringify(items))
+        localStorage.setItem(ITEMS_KEY, JSON.stringify(items))
+        void window.store?.set(ITEMS_KEY, items)
     }, [items])
+
+    // A force quit gives the renderer no chance to run, so make sure the last
+    // change is on disk as soon as the window starts going away.
+    useEffect(() => {
+        const flush = () => {
+            void window.store?.flush()
+        }
+        window.addEventListener('beforeunload', flush)
+        window.addEventListener('pagehide', flush)
+        return () => {
+            window.removeEventListener('beforeunload', flush)
+            window.removeEventListener('pagehide', flush)
+        }
+    }, [])
 
     useEffect(() => {
         window.files.getDefaultDownloadDir().then((defaultPath) => {

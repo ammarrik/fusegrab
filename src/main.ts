@@ -21,6 +21,11 @@ import {
     shutdownLogger,
 } from './lib/services/logger/service'
 import {
+    flushStoreSync,
+    getStoreValue,
+    setStoreValue,
+} from './lib/services/store/service'
+import {
     checkForUpdate,
     cleanupStaleInstallers,
     downloadUpdate,
@@ -30,6 +35,7 @@ import {
 } from './lib/services/updater/service'
 import {
     cancelYoutubeDownload,
+    destroyScraperWindows,
     downloadYoutubeChannel,
     downloadYoutubeVideo,
     getActiveDownloadState,
@@ -80,6 +86,36 @@ const windowIcon = app.isPackaged
     ? path.join(process.resourcesPath, 'icon.rounded.png')
     : path.join(__dirname, '../../assets/icon.rounded.png')
 
+// A second launch should surface the window we already have rather than start a
+// rival process — two instances would race each other writing the state file.
+// `app.quit()` is not immediate, so `ready` can still fire on the losing
+// instance; the flag stops it from building a window on its way out.
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) {
+    app.quit()
+}
+
+// Only real UI windows. The channel scraper runs in offscreen windows that also
+// show up in `BrowserWindow.getAllWindows()`, and counting those would make the
+// app look like it still has a window open when it does not, so the windows we
+// create for the UI are tracked explicitly.
+const appWindows = new Set<BrowserWindow>()
+
+const getVisibleWindows = () =>
+    Array.from(appWindows).filter((win) => !win.isDestroyed())
+
+// Closing the UI ends the session, so tear down everything that could outlive
+// it. Without this the hidden channel-scraper window (and its long-running
+// scroll loop) keeps the process alive: `window-all-closed` never fires, the app
+// lingers until a right-click → Quit, and an in-flight download keeps
+// `activeDownloadState.isDownloading` set. Relaunching on macOS reuses that same
+// process, so the fresh renderer reads the stale "still downloading" state and
+// refuses to start anything — leaving every item stuck at Queued.
+function shutdownSession() {
+    cancelYoutubeDownload()
+    destroyScraperWindows()
+}
+
 const createWindow = () => {
     // Create the browser window.
     const mainWindow = new BrowserWindow({
@@ -109,6 +145,19 @@ const createWindow = () => {
                   frame: false,
                   backgroundColor: '#ffffff',
               } as const)),
+    })
+
+    appWindows.add(mainWindow)
+
+    // The UI window going away ends the session. Tear down the offscreen
+    // scraper windows and any running download here rather than waiting for
+    // `window-all-closed` — that event cannot fire while a scraper window is
+    // still open, which is exactly what used to keep the app in the dock.
+    mainWindow.on('closed', () => {
+        appWindows.delete(mainWindow)
+        if (getVisibleWindows().length === 0) {
+            shutdownSession()
+        }
     })
 
     setUpdaterWindow(mainWindow)
@@ -150,6 +199,10 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.on('ready', async () => {
+    // Lost the single-instance lock: this process is already quitting, so don't
+    // start a session that would write logs and state over the real instance's.
+    if (!isPrimaryInstance) return
+
     // Initialize session logger
     const logger = initSessionLogger(path.join(app.getPath('userData'), 'logs'))
     logger.startSession('FuseGrab Application', {
@@ -174,10 +227,11 @@ app.on('ready', async () => {
 
 // A cancelled or crashed export can leave a file handle open; make sure they're
 // all closed (and their partial files removed) before the process goes away.
-// shutdownLogger() is deliberately synchronous: Electron does not await
-// before-quit listeners, so an async close/copy can be cut off by process exit.
+// shutdownLogger() and flushStoreSync() are deliberately synchronous: Electron
+// does not await before-quit listeners, so async work can be cut off by exit.
 app.on('before-quit', () => {
     void closeAllWriteStreams()
+    flushStoreSync()
     shutdownLogger()
 })
 
@@ -187,13 +241,28 @@ app.on('before-quit', () => {
 // the red traffic-light button should fully quit instead of requiring an extra
 // right-click → Quit on the dock icon.
 app.on('window-all-closed', () => {
+    shutdownSession()
     app.quit()
 })
 
 app.on('activate', () => {
     // On OS X it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // dock icon is clicked and there are no other windows open. A hidden
+    // scraper window must not count as "a window is already open", or the
+    // dock icon would bring back an app with no visible UI.
+    if (getVisibleWindows().length === 0) {
+        createWindow()
+    }
+})
+
+// Someone launched FuseGrab again while it was already running: focus the
+// window we have instead of starting a second copy.
+app.on('second-instance', () => {
+    const [existing] = getVisibleWindows()
+    if (existing) {
+        if (existing.isMinimized()) existing.restore()
+        existing.focus()
+    } else {
         createWindow()
     }
 })
@@ -295,4 +364,16 @@ handle('youtube:download-channel', (event, options) =>
     ),
 )
 handle('youtube:cancel-download', () => cancelYoutubeDownload())
+
+// Renderer state that must outlive a force quit. localStorage alone loses the
+// last writes when the process is killed, so the table is mirrored here.
+ipcMain.on('store:get-sync', (event, key: string) => {
+    // Synchronous so the renderer can seed its first render from disk. Without
+    // it the table would mount empty and then flash in.
+    event.returnValue = getStoreValue(key)
+})
+handle('store:set', (_event, key: string, value: unknown) => {
+    setStoreValue(key, value)
+})
+handle('store:flush', () => flushStoreSync())
 handle('youtube:get-download-state', () => getActiveDownloadState())

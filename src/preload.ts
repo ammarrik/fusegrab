@@ -114,6 +114,18 @@ contextBridge.exposeInMainWorld('api', {
     },
 })
 
+// Durable state that survives a force quit. localStorage is written lazily by
+// Chromium, so a killed process loses the most recent changes; the main process
+// mirrors this to a JSON file in userData instead.
+contextBridge.exposeInMainWorld('store', {
+    // Synchronous on purpose: the download table seeds its very first render
+    // from this, so an async read would mount an empty table and flash in.
+    getSync: (key: string) => ipcRenderer.sendSync('store:get-sync', key),
+    set: (key: string, value: unknown) =>
+        ipcRenderer.invoke('store:set', key, value) as Promise<void>,
+    flush: () => ipcRenderer.invoke('store:flush') as Promise<void>,
+})
+
 contextBridge.exposeInMainWorld('windowControls', {
     platform: process.platform,
     minimize: () => ipcRenderer.invoke('window:minimize'),

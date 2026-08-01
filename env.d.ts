@@ -92,6 +92,11 @@ declare global {
             reveal: (filePath: string) => Promise<boolean>
             deletePartialFile: (filePath: string) => Promise<void>
         }
+        store: {
+            getSync: <T>(key: string) => T | null
+            set: (key: string, value: unknown) => Promise<void>
+            flush: () => Promise<void>
+        }
         windowControls: {
             platform: NodeJS.Platform
             minimize: () => Promise<void>
