@@ -4,6 +4,8 @@ import { useState } from 'react'
 
 import { Folder, FolderOpen, Video } from '#/components/icons'
 
+// import amfaizIcon from '../../../../assets/amfaiz-icon.png'
+
 interface DownloaderSidebarProps {
     items: DownloadItem[]
     activeFilter: string
@@ -34,8 +36,8 @@ export function DownloaderSidebar({
     )
 
     return (
-        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pr-0 pb-3 pl-2 select-none">
-            <div className="flex flex-col gap-4 overflow-y-auto pr-2">
+        <aside className="border-border bg-surface flex w-56 shrink-0 flex-col justify-between border-r pt-1.5 pr-0 pb-3 select-none">
+            <div className="flex flex-col gap-4 overflow-y-auto pr-2 pl-2">
                 <div>
                     <div className="bg-surface text-muted-foreground sticky top-0 z-10 px-2 pt-1 pb-1.5 text-[10px] font-semibold tracking-wider uppercase">
                         Categories
@@ -140,6 +142,32 @@ export function DownloaderSidebar({
                     </div>
                 </div>
             </div>
+            {/* 
+            <div className="border-border mt-2 flex w-full items-start border-t px-2.5 pt-2.5">
+                <a
+                    href="https://amfaiz.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:bg-muted flex grow items-center gap-1.5 rounded-md p-1.75 transition-colors"
+                >
+                    <img
+                        src={amfaizIcon}
+                        alt="amfaiz"
+                        className="size-4 object-contain"
+                    />
+                    <span
+                        className="text-foreground text-sm leading-none"
+                        style={{
+                            fontFamily:
+                                '"Noto Serif", Georgia, "Times New Roman", serif',
+                        }}
+                    >
+                        amfaiz
+                    </span>
+
+                    <ExternalLink className="ml-auto size-3" />
+                </a>
+            </div> */}
         </aside>
     )
 }
