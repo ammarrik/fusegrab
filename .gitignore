@@ -16,3 +16,4 @@ todos.json
 scratch
 .claude/**/*.lock
 build/ffmpeg-cache
+.pnpm-store
